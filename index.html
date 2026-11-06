@@ -243,11 +243,14 @@ table.list .phone { white-space: nowrap; }
   .actions { flex-wrap: wrap; }
   .tablecard .pager { flex-wrap: wrap; }
   .strip { grid-auto-columns: 74px; }
-  #demobar span { display: none; } #demobar { left: auto; right: 8px; bottom: 8px; padding: 4px; }
 }
 
-#demobar { position: fixed; left: 12px; bottom: 12px; z-index: 90; display: flex; gap: 6px; align-items: center; background: #fff8e1; border: 1px solid #f1d58a; color: #6b4f00; border-radius: 10px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
-#demobar button { font-size: 12px; padding: 3px 9px; }
+#demobar { position: fixed; right: 12px; bottom: 12px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#demobar .demo-tog { font-size: 12px; padding: 6px 10px; border-radius: 16px; background: #fff8e1; border: 1px dashed #d9b44a; color: #6b4f00; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+#demobar .demo-panel { background: #fff; border: 1px dashed #d9b44a; border-radius: 10px; padding: 10px; width: 230px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+#demobar .demo-panel[hidden] { display: none; }
+#demobar .demo-panel p { margin: 0 0 4px; font-size: 12px; color: #6b4f00; line-height: 1.4; }
+#demobar .demo-panel button { font-size: 13px; text-align: left; }
 body:has(.selbar.on) #demobar { bottom: 80px; }
 
 </style>
@@ -704,13 +707,17 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     window.afterLogin(r);
   };
   addEventListener('DOMContentLoaded', () => {
-    const bar = document.createElement('div');
-    bar.id = 'demobar';
-    const t = document.createElement('span'); t.textContent = '체험판 · 가짜 DB 60건 · 새로 고치면 처음으로 · 계정 바꾸기:'; bar.append(t);
-    for (const [label, id, pw] of [['어드민', 'admin', 'admin1234'], ['상담사A', 'counsel1', 'demo1234'], ['상담사B', 'counsel2', 'demo1234']]) {
-      const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', () => window.demoSwitch(id, pw)); bar.append(b);
+    // 체험판 전용: 오른쪽 아래 작은 버튼 → 눌러야 계정 목록이 펼쳐짐 (실제 프로그램에는 없음)
+    const wrap = document.createElement('div'); wrap.id = 'demobar';
+    const panel = document.createElement('div'); panel.className = 'demo-panel'; panel.hidden = true;
+    const note = document.createElement('p'); note.textContent = '체험판 전용 기능입니다. 실제 프로그램에는 이 버튼이 없고, 상담사는 다른 계정으로 바꿀 수 없습니다.'; panel.append(note);
+    for (const [label, id, pw] of [['어드민으로 보기', 'admin', 'admin1234'], ['상담사A로 보기', 'counsel1', 'demo1234'], ['상담사B로 보기', 'counsel2', 'demo1234']]) {
+      const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', () => { panel.hidden = true; window.demoSwitch(id, pw); }); panel.append(b);
     }
-    document.body.append(bar);
+    const tog = document.createElement('button'); tog.className = 'demo-tog'; tog.textContent = '체험판 · 계정 바꿔 보기';
+    tog.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+    wrap.append(panel, tog);
+    document.body.append(wrap);
   });
 })();
 
