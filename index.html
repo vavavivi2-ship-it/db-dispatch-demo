@@ -248,6 +248,14 @@ table.list .phone { white-space: nowrap; }
 .field .toggle input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--brand); }
 .modal .field > span { color: var(--muted); }
 
+.grid5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px 12px; }
+.grid5 .field input { width: 100%; }
+.panel.soft { background: #f7f9fc; margin-top: 8px; }
+.field .row > label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-right: 10px; color: var(--text); }
+.field input[type=checkbox], .field input[type=radio] { width: auto; flex: none; accent-color: var(--brand); }
+.field .row input[type=date] { width: auto; }
+.notice.info { background: var(--brand-soft); color: #1d3f7a; border: 1px solid #cfdcfb; }
+
 #demobar { position: fixed; right: 12px; bottom: 12px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 #demobar .demo-tog { font-size: 12px; padding: 6px 10px; border-radius: 16px; background: #fff8e1; border: 1px dashed #d9b44a; color: #6b4f00; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
 #demobar .demo-panel { background: #fff; border: 1px dashed #d9b44a; border-radius: 10px; padding: 10px; width: 230px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
@@ -288,7 +296,8 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   ];
   const batches = [{ id: 1, fileName: '11월_메타_네이버.xlsx', sheet: 'Sheet1', source: '(체험) 가상 대행사', purchasedAt: daysAgo(7).slice(0, 10), consentProof: '(체험) 제3자 제공 동의서 사본', adConsent: 'yes', nightConsent: 0, checkedBy: '[관리자]', memo: '', total: 60, inserted: 60, attached: 0, failed: 0, createdAt: daysAgo(7, 9), by: '[관리자]', undoneAt: null, undoneCount: 0 }];
   const leads = [], notes = [], entries = [], assignLog = [], audit = [], alerts = [], destroyLog = [];
-  const settings = { callScheme: 'tel', callPrefix: '', counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0 };
+  const settings = { callScheme: 'tel', callPrefix: '', counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0,
+    perfWeights: { payCount: 5, payRate: 3, payAmount: 0, reserveRate: 2, visitRate: 0 }, perfPeriod: '30', perfMinSample: 10, perfFloorPct: 50 };
   let seq = { lead: 0, note: 0, user: 4, batch: 1, audit: 0, alert: 0 };
   {
     const fam = '김이박최정강조윤장임', given = ['민지', '서연', '도윤', '하준', '지우', '서준', '예린', '시우', '채원', '지호'];
@@ -309,6 +318,9 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
         if (st !== '연락대기') notes.push({ id: ++seq.note, leadId: l.id, by: l.assignedTo, body: st === '재연락' ? '오늘 저녁 다시 연락 요청' : '', statusFrom: '연락대기', statusTo: st, at: l.lastActionAt });
       }
       if (i === 5) { l.inflowCount = 2; l.reinflow = 1; l.lastInflowAt = daysAgo(0, 9); entries.push({ leadId: l.id, batchId: 1, isFirst: 0, route: '카카오 모먼트', appliedAt: today(), interest: '임플란트', memo: '재신청', at: l.lastInflowAt }); }
+      // 실적 화면이 한쪽으로만 쏠리지 않도록 몇 건 손봄 (A 결제 2건, C 예약 1건)
+      if (i === 0 || i === 24) Object.assign(l, { status: '결제성공', visitAt: daysLater(-4, 11), visitStatus: '방문', visitCounselor: '김실장', payAmount: 1900000, reservedAt: daysAgo(6, 10) });
+      if (i === 2) Object.assign(l, { status: '예약성공', absentCount: 0, visitAt: daysLater(4, 15), visitCounselor: '박실장', reservedAt: daysAgo(1, 15) });
       leads.push(l);
     }
   }
@@ -595,9 +607,58 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
 
   on('POST', '/api/admin/assign', (b) => { const a = admin(), [to] = counselorsOf([b.to]); let assigned = 0, reassigned = 0; for (const id of b.leadIds || []) { const l = getLead(a, id); if (l.assignedTo === to.id) continue; l.assignedTo ? reassigned++ : assigned++; setOwner(a, l, to.id, l.assignedTo ? 'reassign' : 'assign'); } log('ASSIGN', `to:${to.id} 신규${assigned} 재배정${reassigned}`); return { to: to.name, assigned, reassigned }; });
   on('POST', '/api/admin/reclaim', (b) => { const a = admin(); let reclaimed = 0; for (const id of b.leadIds || []) { const l = getLead(a, id); if (l.assignedTo === null) continue; setOwner(a, l, null, 'reclaim'); reclaimed++; } log('RECLAIM', `${reclaimed}건`); return { reclaimed }; });
+  // 실적 (서버 src/perf.ts 와 같은 계산)
+  const PM = ['payCount', 'payRate', 'payAmount', 'reserveRate', 'visitRate'];
+  const PL = { payCount: '결제 건수', payRate: '결제율', payAmount: '결제금액', reserveRate: '예약율', visitRate: '방문율' };
+  const PRESETS = { pay: { payCount: 5, payRate: 3, payAmount: 0, reserveRate: 2, visitRate: 0 }, reserve: { payCount: 1, payRate: 1, payAmount: 0, reserveRate: 6, visitRate: 2 }, balance: { payCount: 2, payRate: 2, payAmount: 2, reserveRate: 2, visitRate: 2 } };
+  const normW = (v) => { const o = v && typeof v === 'object' ? v : {}, out = {}; for (const m of PM) { const n = o[m] === undefined ? 0 : Number(o[m]); if (!Number.isFinite(n) || n < 0 || n > 10) throw new E(400, 'VALIDATION', `${PL[m]} 비중은 0~10 사이여야 합니다`); out[m] = Math.round(n * 10) / 10; } if (PM.every((m) => out[m] === 0)) throw new E(400, 'VALIDATION', '비중을 하나 이상 0보다 크게 정하세요'); return out; };
+  const addD = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const pRange = (period, from, to) => {
+    const t = today();
+    if (from || to) { const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v; const f = from || '2000-01-01', e = to || t; if (!ok(f) || !ok(e)) throw new E(400, 'VALIDATION', '날짜가 올바르지 않습니다 (YYYY-MM-DD)'); return { from: f, to: e, label: `${f} ~ ${e}` }; }
+    if (period === '7') return { from: addD(t, -6), to: t, label: '최근 7일' };
+    if (period === 'month') return { from: t.slice(0, 8) + '01', to: t, label: '이번 달' };
+    return { from: addD(t, -29), to: t, label: '최근 30일' };
+  };
+  const computePerf = (o = {}) => {
+    const weights = o.weights || settings.perfWeights, minSample = o.minSample ?? settings.perfMinSample, range = pRange(o.period || settings.perfPeriod, o.from, o.to);
+    const end = addD(range.to, 1), pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    const rows = users.filter((u) => u.role === 'counselor').sort((x, y) => y.active - x.active || x.sort - y.sort || x.id - y.id).map((u) => {
+      const mine = leads.filter((l) => l.assignedTo === u.id && l.assignedAt >= range.from && l.assignedAt < end);
+      const reserved = mine.filter((l) => l.reservedAt).length, visited = mine.filter((l) => ['방문성공', '결제성공', '결제실패', '리워드'].includes(l.status) || l.visitStatus === '방문').length;
+      const paid = mine.filter((l) => ['결제성공', '리워드'].includes(l.status) || l.payAmount > 0).length, payAmount = mine.reduce((x, l) => x + (l.payAmount || 0), 0);
+      return { id: u.id, name: u.name, active: !!u.active, received: mine.length, reserved, visited, paid, payAmount, reserveRate: pct(reserved, mine.length), visitRate: pct(visited, mine.length), payRate: pct(paid, mine.length),
+        scores: { payCount: 0, payRate: 0, payAmount: 0, reserveRate: 0, visitRate: 0 }, composite: null, rank: null, pending: mine.length < minSample };
+    });
+    const val = (r, m) => (m === 'payCount' ? r.paid : r[m]);
+    const judged = rows.filter((r) => !r.pending), wsum = PM.reduce((x, m) => x + weights[m], 0);
+    for (const m of PM) { const top = Math.max(0, ...judged.map((r) => val(r, m))); for (const r of rows) r.scores[m] = top > 0 ? Math.round((val(r, m) / top) * 1000) / 10 : 0; }
+    for (const r of judged) r.composite = Math.round((PM.reduce((x, m) => x + r.scores[m] * weights[m], 0) / wsum) * 10) / 10;
+    [...judged].sort((a, b) => b.composite - a.composite || b.paid - a.paid || a.id - b.id).forEach((r, i, arr) => { r.rank = i > 0 && arr[i - 1].composite === r.composite ? arr[i - 1].rank : i + 1; });
+    return { range, weights, minSample, rows };
+  };
+  const perfQuotas = (n, people, floorPct) => {
+    const k = people.length, out = new Map(); if (!k || n <= 0) { for (const p of people) out.set(p.id, 0); return out; }
+    const e = n / k, exact = new Map(), pending = people.filter((p) => p.score === null), judged = people.filter((p) => p.score !== null);
+    for (const p of pending) exact.set(p.id, e);
+    const pool = n - pending.length * e, floor = Math.min(e, (e * floorPct) / 100), ssum = judged.reduce((x, p) => x + (p.score || 0), 0);
+    for (const p of judged) exact.set(p.id, ssum > 0 ? floor + (pool - floor * judged.length) * (p.score / ssum) : pool / judged.length);
+    let used = 0; for (const p of people) { const v = Math.floor(exact.get(p.id)); out.set(p.id, v); used += v; }
+    const order = [...people].sort((a, b) => (exact.get(b.id) % 1) - (exact.get(a.id) % 1) || (b.score ?? -1) - (a.score ?? -1) || a.id - b.id);
+    for (let i = 0; used < n; i = (i + 1) % order.length) { out.set(order[i].id, out.get(order[i].id) + 1); used++; }
+    return out;
+  };
+  on('GET', '/api/admin/performance', (b, q) => {
+    admin();
+    let weights; if (q.get('weights')) { try { weights = JSON.parse(q.get('weights')); } catch { throw new E(400, 'VALIDATION', '비중 값이 올바르지 않습니다'); } weights = normW(weights); }
+    const period = q.get('period') || undefined; if (period && !['7', '30', 'month'].includes(period)) throw new E(400, 'VALIDATION', '기간 값이 올바르지 않습니다');
+    const out = computePerf({ weights, period, from: q.get('from'), to: q.get('to'), minSample: q.get('minSample') ? Number(q.get('minSample')) : undefined });
+    log('VIEW_PERFORMANCE', out.range.label);
+    return { ...out, settings: { weights: settings.perfWeights, period: settings.perfPeriod, minSample: settings.perfMinSample, floorPct: settings.perfFloorPct }, metrics: PM.map((k) => ({ k, label: PL[k] })), presets: PRESETS };
+  });
   on('POST', '/api/admin/auto-assign', (b) => {
-    const a = admin(); if (!['even', 'round'].includes(b.mode)) throw new E(400, 'VALIDATION', '분배 방식을 고르세요');
-    const cs = counselorsOf(b.counselorIds), maxEach = b.maxEach ? Number(b.maxEach) : Infinity;
+    const a = admin(); if (!['even', 'round', 'perf'].includes(b.mode)) throw new E(400, 'VALIDATION', '분배 방식을 고르세요 (균등·순번·실적순)');
+    const cs = counselorsOf(b.counselorIds), maxEach = b.maxEach ? Number(b.maxEach) : Infinity, preview = b.preview === true;
     let pool = leads.filter((l) => l.assignedTo === null);
     if (b.leadIds) pool = pool.filter((l) => b.leadIds.includes(l.id));
     if (b.batchId) pool = pool.filter((l) => l.batchId === Number(b.batchId));
@@ -605,16 +666,24 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     const given = new Map(cs.map((c) => [c.id, 0])), load = new Map(cs.map((c) => [c.id, leads.filter((l) => l.assignedTo === c.id && OPEN.includes(l.status)).length]));
     const order = users.filter((u) => u.role === 'counselor').sort((x, y) => x.sort - y.sort || x.id - y.id).map((u) => u.id);
     let idx = 0; if (b.mode === 'round') { const cp = order.indexOf(settings.rrCursor), n = cs.findIndex((c) => order.indexOf(c.id) > cp); idx = cp < 0 || n < 0 ? 0 : n; }
+    let perf = null, quota = null;
+    if (b.mode === 'perf') {
+      const pr = computePerf(), scores = new Map(cs.map((c) => { const r = pr.rows.find((x) => x.id === c.id); return [c.id, r && !r.pending ? r.composite : null]; }));
+      perf = { label: pr.range.label, scores }; quota = perfQuotas(pool.length, cs.map((c) => ({ id: c.id, score: scores.get(c.id) })), settings.perfFloorPct);
+      for (const [k, v] of quota) quota.set(k, Math.min(v, maxEach));
+      cs.sort((x, y) => (scores.get(y.id) ?? -1) - (scores.get(x.id) ?? -1) || x.sort - y.sort || x.id - y.id);
+    }
+    const plan = [];
     for (const l of pool) {
       let pick;
       if (b.mode === 'even') pick = cs.filter((c) => given.get(c.id) < maxEach).sort((x, y) => load.get(x.id) - load.get(y.id) || x.sort - y.sort)[0];
-      else for (let k = 0; k < cs.length; k++) { const c = cs[(idx + k) % cs.length]; if (given.get(c.id) < maxEach) { pick = c; idx = (idx + k + 1) % cs.length; break; } }
+      else { const lim = (c) => (quota ? quota.get(c.id) : maxEach); for (let k = 0; k < cs.length; k++) { const c = cs[(idx + k) % cs.length]; if (given.get(c.id) < lim(c)) { pick = c; idx = (idx + k + 1) % cs.length; break; } } }
       if (!pick) break;
-      setOwner(a, l, pick.id, 'auto'); given.set(pick.id, given.get(pick.id) + 1); load.set(pick.id, load.get(pick.id) + 1); if (b.mode === 'round') settings.rrCursor = pick.id;
+      plan.push([l, pick]); given.set(pick.id, given.get(pick.id) + 1); load.set(pick.id, load.get(pick.id) + 1);
     }
-    const total = [...given.values()].reduce((x, y) => x + y, 0);
-    log('AUTO_ASSIGN', `${b.mode} ${total}건`);
-    return { mode: b.mode, total, poolSize: pool.length, left: pool.length - total, perCounselor: cs.map((c) => ({ id: c.id, name: c.name, given: given.get(c.id) })) };
+    if (!preview) { for (const [l, c] of plan) { setOwner(a, l, c.id, 'auto'); if (b.mode === 'round') settings.rrCursor = c.id; } log('AUTO_ASSIGN', `${b.mode} ${plan.length}건`); }
+    return { mode: b.mode, preview, total: plan.length, poolSize: pool.length, left: pool.length - plan.length, ...(perf ? { perf: { period: perf.label, floorPct: settings.perfFloorPct } } : {}),
+      perCounselor: cs.map((c) => ({ id: c.id, name: c.name, given: given.get(c.id), ...(perf ? { score: perf.scores.get(c.id), pending: perf.scores.get(c.id) === null } : {}) })) };
   });
   on('GET', '/api/admin/stats', () => { admin(); return statsFor(); });
   on('POST', '/api/admin/export', (b) => { admin(); if (String(b.reason || '').trim().length < 5) throw new E(400, 'VALIDATION', '다운로드 사유를 5자 이상 적어 주세요'); log('EXPORT', `사유:${b.reason}`); throw new E(400, 'DEMO', '체험판에서는 파일을 내려받을 수 없습니다. 사유 입력과 접속기록까지는 실제와 같습니다 — [접속기록]에서 확인하세요'); });
@@ -703,7 +772,10 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   on('PUT', '/api/admin/settings', (b) => {
     admin();
     if (b.ipPolicy === 'otp_outside' && !(b.allowedIps || []).length) throw new E(400, 'VALIDATION', '사무실 IP를 1개 이상 등록해야 이 정책을 켤 수 있습니다');
-    for (const k of ['callScheme', 'callPrefix', 'counselorEntry', 'name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy']) if (b[k] !== undefined) settings[k] = b[k];
+    if (b.perfWeights !== undefined) settings.perfWeights = normW(b.perfWeights);
+    if (b.perfPeriod !== undefined && !['7', '30', 'month'].includes(String(b.perfPeriod))) throw new E(400, 'VALIDATION', '실적 기간 값이 올바르지 않습니다');
+    if (b.perfFloorPct !== undefined && !(Number(b.perfFloorPct) >= 0 && Number(b.perfFloorPct) <= 100)) throw new E(400, 'VALIDATION', '최소 보장은 0~100 사이여야 합니다');
+    for (const k of ['callScheme', 'callPrefix', 'counselorEntry', 'name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy', 'perfPeriod', 'perfMinSample', 'perfFloorPct']) if (b[k] !== undefined) settings[k] = b[k];
     log('UPDATE_SETTINGS'); return settingsOut();
   });
   on('GET', '/api/admin/audit', (b, q) => {
@@ -885,9 +957,9 @@ function pwChangeView(forced) {
 }
 
 // ---------- 틀 ----------
-const ADMIN_TABS = [['home', '현황', 'home'], ['leads', 'DB 목록·분배', 'users'], ['import', '엑셀 업로드', 'upload'], ['users', '상담사', 'id'], ['audit', '접속기록', 'log'], ['destroy', '파기', 'trash'], ['settings', '설정', 'gear'], ['me', '내 정보', 'me']];
+const ADMIN_TABS = [['home', '현황', 'home'], ['leads', 'DB 목록·분배', 'users'], ['import', '엑셀 업로드', 'upload'], ['users', '상담사', 'id'], ['perf', '실적', 'chart'], ['audit', '접속기록', 'log'], ['destroy', '파기', 'trash'], ['settings', '설정', 'gear'], ['me', '내 정보', 'me']];
 const COUNSELOR_TABS = [['my', '내 DB', 'users'], ['me', '내 정보', 'me']];
-const TITLES = { home: '현황', leads: 'DB 목록', my: '내 DB', import: '엑셀 업로드', users: '상담사', audit: '접속기록', destroy: '파기', settings: '설정', me: '내 정보' };
+const TITLES = { home: '현황', leads: 'DB 목록', my: '내 DB', import: '엑셀 업로드', users: '상담사', perf: '상담사 실적', audit: '접속기록', destroy: '파기', settings: '설정', me: '내 정보' };
 let alertCount = 0;
 
 // 선 아이콘 (24x24, stroke)
@@ -896,7 +968,7 @@ const ICONS = {
   upload: 'M12 16V4M7 9l5-5 5 5M4 16v4h16v-4', id: 'M4 5h16v14H4zM9 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 16a3 3 0 0 1 6 0M14 9h4M14 13h4', log: 'M6 3h9l4 4v14H6zM9 10h7M9 14h7M9 18h4',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.2 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   me: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0', menu: 'M4 6h16M4 12h16M4 18h16', out: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10', cal: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
-  refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6', down: 'M12 4v12M7 11l5 5 5-5M5 20h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', left: 'M15 6l-6 6 6 6', right: 'M9 6l6 6-6 6', x: 'M6 6l12 12M18 6L6 18'
+  refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6', down: 'M12 4v12M7 11l5 5 5-5M5 20h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', left: 'M15 6l-6 6 6 6', right: 'M9 6l6 6-6 6', x: 'M6 6l12 12M18 6L6 18', chart: 'M4 20h16M7 16v-5M12 16V6M17 16v-8'
 };
 function icon(name, size = 18) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -929,7 +1001,7 @@ function render(msg) {
     // 휴대폰: 메뉴가 펼쳐진 상태에서 본문을 누르면 메뉴를 닫음
     h('div', { class: 'page', onclick: () => { if (isNarrow() && shell.classList.contains('nav-closed')) { S.navClosed = false; shell.classList.remove('nav-closed'); } } }, h('h1', { class: 'title' }, TITLES[S.tab]), main));
   $app.append(shell);
-  const view = { home: homeView, leads: (m) => leadsView('admin', m), my: (m) => leadsView('counselor', m), import: importView, users: usersView, audit: auditView, destroy: destroyView, settings: settingsView, me: meView }[S.tab];
+  const view = { home: homeView, leads: (m) => leadsView('admin', m), my: (m) => leadsView('counselor', m), import: importView, users: usersView, perf: perfView, audit: auditView, destroy: destroyView, settings: settingsView, me: meView }[S.tab];
   run(view)(main);
 }
 
@@ -1295,22 +1367,107 @@ function entryDialog(isAdmin, users, reload, openDetail) {
 
 function autoDialog(active, selected, f, reload) {
   const picks = new Set(active.map((u) => u.id));
-  const mode = h('select', {}, h('option', { value: 'even' }, '균등 — 진행 중 건수가 적은 상담사부터'), h('option', { value: 'round' }, '순번 — 지난번 마지막 상담사 다음부터 한 건씩'));
+  const mode = h('select', {}, h('option', { value: 'even' }, '균등 — 진행 중 건수가 적은 상담사부터'), h('option', { value: 'round' }, '순번 — 지난번 마지막 상담사 다음부터 한 건씩'), h('option', { value: 'perf' }, '실적순 — 종합 점수가 높은 상담사에게 더 많이'));
   const scopeSel = h('select', {},
     selected.length ? h('option', { value: 'sel' }, `선택한 ${selected.length}건 중 미배정분`) : null,
     f.sel && f.sel.batchId.size === 1 ? h('option', { value: 'batch' }, `고른 업로드 #${[...f.sel.batchId][0]}의 미배정분`) : null,
     h('option', { value: 'all' }, '미배정 전체'));
   const maxEach = h('input', { type: 'number', min: 1, placeholder: '제한 없음', size: 8 });
+  const perfNote = h('div', { class: 'notice info small', hidden: true }, '실적순: [실적] 메뉴에서 정한 기간·비중으로 매긴 종합 점수에 비례해 나눕니다. 모두 균등분의 일정 비율(최소 보장)은 받고, 받은 DB 가 적어 판단 보류인 상담사는 균등분을 받습니다. 먼저 [미리보기]로 몇 건씩 가는지 확인하세요.');
+  const planBox = h('div');
   const body = h('div', { class: 'stack' },
-    h('label', { class: 'field' }, h('span', {}, '방식'), mode), h('label', { class: 'field' }, h('span', {}, '대상'), scopeSel),
-    h('div', { class: 'field' }, h('span', {}, '받을 상담사'), h('div', { class: 'row' }, active.map((u) => h('label', {}, h('input', { type: 'checkbox', checked: true, onchange: (e) => { e.target.checked ? picks.add(u.id) : picks.delete(u.id); } }), u.name)))),
-    h('label', { class: 'field' }, h('span', {}, '1인당 최대 건수'), maxEach));
-  modal('미배정 자동 분배', body, (close) => [h('button', { onclick: close }, '취소'), h('button', { class: 'primary', onclick: run(async () => {
-    const req = { mode: mode.value, counselorIds: [...picks], maxEach: maxEach.value ? Number(maxEach.value) : undefined };
-    if (scopeSel.value === 'sel') req.leadIds = selected; if (scopeSel.value === 'batch') req.batchId = Number([...f.sel.batchId][0]);
-    const r = await api('POST', '/api/admin/auto-assign', req);
-    close(); toast(`${r.total}건 분배: ${r.perCounselor.map((c) => `${c.name} ${c.given}`).join(', ')}${r.left ? ` · 남음 ${r.left}` : ''}`); reload();
-  }) }, '분배하기')]);
+    h('label', { class: 'field' }, h('span', {}, '방식'), mode), perfNote, h('label', { class: 'field' }, h('span', {}, '대상'), scopeSel),
+    h('div', { class: 'field' }, h('span', {}, '받을 상담사'), h('div', { class: 'row' }, active.map((u) => h('label', {}, h('input', { type: 'checkbox', checked: true, onchange: (e) => { e.target.checked ? picks.add(u.id) : picks.delete(u.id); clear(planBox); } }), u.name)))),
+    h('label', { class: 'field' }, h('span', {}, '1인당 최대 건수'), maxEach), planBox);
+  const req = () => {
+    const r = { mode: mode.value, counselorIds: [...picks], maxEach: maxEach.value ? Number(maxEach.value) : undefined };
+    if (scopeSel.value === 'sel') r.leadIds = selected; if (scopeSel.value === 'batch') r.batchId = Number([...f.sel.batchId][0]);
+    return r;
+  };
+  for (const el of [mode, scopeSel, maxEach]) el.addEventListener('change', () => { perfNote.hidden = mode.value !== 'perf'; clear(planBox); });
+  const showPlan = (r) => {
+    clear(planBox);
+    add(planBox, h('div', { class: 'panel soft' }, h('div', { class: 'small muted' }, `미리보기 — 대상 ${fmt(r.poolSize)}건 중 ${fmt(r.total)}건 분배${r.left ? ` · ${fmt(r.left)}건 남음` : ''}${r.perf ? ` · 실적 기간 ${r.perf.period} · 최소 보장 ${r.perf.floorPct}%` : ''}`),
+      h('table', { class: 'small' }, h('thead', {}, h('tr', {}, h('th', {}, '상담사'), r.perf ? h('th', { class: 'right' }, '종합 점수') : null, h('th', { class: 'right' }, '받을 건수'))),
+        h('tbody', {}, r.perCounselor.map((c) => h('tr', {}, h('td', {}, c.name), r.perf ? h('td', { class: 'right' }, c.pending ? h('span', { class: 'muted' }, '판단 보류') : String(c.score)) : null, h('td', { class: 'right' }, h('b', {}, fmt(c.given)))))))));
+  };
+  modal('미배정 자동 분배', body, (close) => [h('button', { onclick: close }, '취소'),
+    h('button', { onclick: run(async () => showPlan(await api('POST', '/api/admin/auto-assign', { ...req(), preview: true }))) }, '미리보기'),
+    h('button', { class: 'primary', onclick: run(async () => {
+      const r = await api('POST', '/api/admin/auto-assign', req());
+      close(); toast(`${r.total}건 분배: ${r.perCounselor.map((c) => `${c.name} ${c.given}`).join(', ')}${r.left ? ` · 남음 ${r.left}` : ''}`); reload();
+    }) }, '분배하기')]);
+}
+
+// ---------- 상담사 실적 (어드민) ----------
+// 기간·비중을 바꾸면 바로 다시 계산해서 보여 주고, [저장]해야 실적순 분배에 쓰임
+async function perfView(main) {
+  let d = await api('GET', '/api/admin/performance');
+  const st = d.settings;
+  const w = { ...st.weights };
+  let period = st.period, from = '', to = '', minSample = st.minSample;
+  const tableBox = h('div'), dirty = h('span', { class: 'small muted' });
+  const presetLabel = { pay: '결제 중심 (기본)', reserve: '예약 중심', balance: '균형' };
+  const wIn = {};
+  const markDirty = () => { const same = JSON.stringify(w) === JSON.stringify(d.settings.weights) && period === d.settings.period && minSample === d.settings.minSample && Number(floor.value) === d.settings.floorPct && !from && !to; dirty.textContent = same ? '' : '저장 안 됨 — [저장]해야 실적순 분배에 반영됩니다'; };
+  const preset = h('select', { onchange: () => { const p = d.presets[preset.value]; if (!p) return; Object.assign(w, p); for (const k in wIn) wIn[k].value = String(w[k]); reload(); } },
+    h('option', { value: '' }, '직접 정함'), Object.keys(d.presets).map((k) => h('option', { value: k }, presetLabel[k] || k)));
+  const per = h('select', { onchange: () => { period = per.value; if (period !== 'custom') { from = ''; to = ''; } custom.hidden = period !== 'custom'; if (period !== 'custom') reload(); } },
+    [['7', '최근 7일'], ['30', '최근 30일'], ['month', '이번 달'], ['custom', '직접 지정']].map(([v, l]) => h('option', { value: v, selected: period === v }, l)));
+  const fIn = h('input', { type: 'date' }), tIn = h('input', { type: 'date' });
+  const custom = h('span', { class: 'row', hidden: true }, fIn, '~', tIn, h('button', { onclick: () => { from = fIn.value; to = tIn.value; reload(); } }, '보기'));
+  const minIn = h('input', { type: 'number', min: 0, max: 1000, value: String(minSample), size: 4, onchange: () => { minSample = Number(minIn.value || 0); reload(); } });
+  const floor = h('input', { type: 'number', min: 0, max: 100, value: String(st.floorPct), size: 4, oninput: markDirty });
+  const wRow = h('div', { class: 'grid5' }, d.metrics.map((m) => {
+    wIn[m.k] = h('input', { type: 'number', min: 0, max: 10, step: 1, value: String(w[m.k]), size: 3, onchange: () => { w[m.k] = Number(wIn[m.k].value || 0); preset.value = ''; reload(); } });
+    return h('label', { class: 'field' }, h('span', {}, m.label), wIn[m.k]);
+  }));
+  for (const [k, p] of Object.entries(d.presets)) if (JSON.stringify(p) === JSON.stringify(w)) preset.value = k;
+
+  async function reload() {
+    const q = new URLSearchParams({ weights: JSON.stringify(w), minSample: String(minSample) });
+    if (from || to) { if (from) q.set('from', from); if (to) q.set('to', to); } else if (period !== 'custom') q.set('period', period);
+    d = { ...d, ...(await api('GET', '/api/admin/performance?' + q)) };
+    draw(); markDirty();
+  }
+  function draw() {
+    clear(tableBox);
+    const ms = d.metrics;
+    const rows = [...d.rows].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || Number(b.active) - Number(a.active) || b.received - a.received);
+    add(tableBox, h('div', { class: 'small muted', style: 'margin:4px 0 8px' }, `${d.range.label} (${d.range.from} ~ ${d.range.to}) 에 배정받은 DB 기준 · 점수는 항목마다 1등 = 100`),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'list' },
+        h('thead', {}, h('tr', {}, h('th', {}, '순위'), h('th', {}, '상담사'), h('th', { class: 'right' }, '받은 DB'), h('th', { class: 'right' }, '예약'), h('th', { class: 'right' }, '방문'), h('th', { class: 'right' }, '결제'), h('th', { class: 'right' }, '결제금액'),
+          ms.map((m) => h('th', { class: 'right' + (w[m.k] ? '' : ' muted') }, `${m.label}`, h('div', { class: 'sub' }, `점수 · 비중 ${w[m.k]}`))), h('th', { class: 'right' }, '종합'))),
+        h('tbody', {}, rows.length ? rows.map((r) => h('tr', { class: r.active ? '' : 'muted' },
+          h('td', {}, r.pending ? h('span', { class: 'pill' }, '판단 보류') : h('b', {}, `${r.rank}위`)),
+          h('td', { class: 'nowrap' }, r.name, r.active ? null : h('span', { class: 'tag' }, '정지')),
+          h('td', { class: 'right' }, fmt(r.received)),
+          h('td', { class: 'right' }, fmt(r.reserved), h('div', { class: 'sub' }, `${r.reserveRate}%`)),
+          h('td', { class: 'right' }, fmt(r.visited), h('div', { class: 'sub' }, `${r.visitRate}%`)),
+          h('td', { class: 'right' }, fmt(r.paid), h('div', { class: 'sub' }, `${r.payRate}%`)),
+          h('td', { class: 'right' }, fmt(r.payAmount)),
+          ms.map((m) => h('td', { class: 'right' + (w[m.k] ? '' : ' muted') }, r.pending ? '—' : String(r.scores[m.k]))),
+          h('td', { class: 'right' }, r.pending ? h('span', { class: 'muted small' }, `${d.minSample}건 미만`) : h('b', {}, String(r.composite)))))
+          : h('tr', {}, h('td', { class: 'muted', colspan: 99 }, '상담사 계정이 없습니다'))))));
+  }
+  add(main,
+    h('div', { class: 'panel' }, h('h2', {}, '기준'),
+      h('div', { class: 'grid2' },
+        h('div', { class: 'field' }, h('span', {}, '기간'), h('div', { class: 'row' }, per, custom)),
+        h('label', { class: 'field' }, h('span', {}, '비중 예시'), preset)),
+      h('div', { class: 'field', style: 'margin-top:10px' }, h('span', {}, '항목별 비중 (0~10, 0이면 안 봄)'), wRow),
+      h('div', { class: 'grid2' },
+        h('label', { class: 'field' }, h('span', {}, '판단 보류 기준 (받은 DB 가 몇 건 미만이면)'), minIn, h('span', { class: 'small muted' }, '신입·휴가 복귀자처럼 받은 DB 가 적은 사람은 순위를 매기지 않고, 실적순 분배에서는 균등분을 받습니다')),
+        h('label', { class: 'field' }, h('span', {}, '최소 보장 (균등분의 %)'), floor, h('span', { class: 'small muted' }, '실적순 분배에서 점수가 낮아도 균등분의 이 비율만큼은 받습니다. 100이면 균등, 0이면 순전히 점수 비례'))),
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'primary', onclick: run(async () => {
+        if (period === 'custom') return toast('저장할 수 있는 기간은 최근 7일·30일·이번 달입니다 (직접 지정은 보기만)');
+        await api('PUT', '/api/admin/settings', { perfWeights: w, perfPeriod: period, perfMinSample: minSample, perfFloorPct: Number(floor.value || 0) });
+        d.settings = { weights: { ...w }, period, minSample, floorPct: Number(floor.value || 0) };
+        markDirty(); toast('저장했습니다 — 다음 실적순 분배부터 이 기준을 씁니다');
+      }) }, '저장'), dirty)),
+    h('div', { class: 'panel' }, h('h2', {}, '상담사별 실적'), tableBox),
+    h('div', { class: 'notice info small' }, '세는 법: 예약 = 예약성공일시가 있는 DB · 방문 = 방문성공·결제성공·결제실패·리워드 또는 방문 상태 "방문" · 결제 = 결제성공·리워드 또는 결제금액 입력. 기간 안에 배정받은 DB 를 지금 담당자 기준으로 셉니다(회수·재배정되면 새 담당자 실적). 건수만 보면 많이 받은 사람이 계속 유리해지므로 율(받은 DB 대비)도 함께 봅니다.'));
+  draw();
 }
 
 // ---------- 엑셀 업로드 ----------
