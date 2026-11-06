@@ -288,7 +288,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   ];
   const batches = [{ id: 1, fileName: '11월_메타_네이버.xlsx', sheet: 'Sheet1', source: '(체험) 가상 대행사', purchasedAt: daysAgo(7).slice(0, 10), consentProof: '(체험) 제3자 제공 동의서 사본', adConsent: 'yes', nightConsent: 0, checkedBy: '[관리자]', memo: '', total: 60, inserted: 60, attached: 0, failed: 0, createdAt: daysAgo(7, 9), by: '[관리자]', undoneAt: null, undoneCount: 0 }];
   const leads = [], notes = [], entries = [], assignLog = [], audit = [], alerts = [], destroyLog = [];
-  const settings = { counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0 };
+  const settings = { callScheme: 'tel', callPrefix: '', counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0 };
   let seq = { lead: 0, note: 0, user: 4, batch: 1, audit: 0, alert: 0 };
   {
     const fam = '김이박최정강조윤장임', given = ['민지', '서연', '도윤', '하준', '지우', '서준', '예린', '시우', '채원', '지호'];
@@ -590,7 +590,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
       if (!b.confirmNight) throw new E(409, 'NIGHT_CONFIRM', '야간(21시~08시)입니다. 이 DB는 야간 연락 별도 동의가 확인되지 않았습니다. 그래도 거시겠습니까?');
     }
     log('CALL_PHONE', `${l.id}${night ? ' 야간' : ''}`); bulkCheck(u);
-    return { phone: l.phone, tel: 'tel:' + digits(l.phone) };
+    const dial = settings.callPrefix + digits(l.phone); return { phone: l.phone, method: settings.callScheme, dial, tel: settings.callScheme === 'copy' ? '' : `${settings.callScheme}:${dial}` };
   });
 
   on('POST', '/api/admin/assign', (b) => { const a = admin(), [to] = counselorsOf([b.to]); let assigned = 0, reassigned = 0; for (const id of b.leadIds || []) { const l = getLead(a, id); if (l.assignedTo === to.id) continue; l.assignedTo ? reassigned++ : assigned++; setOwner(a, l, to.id, l.assignedTo ? 'reassign' : 'assign'); } log('ASSIGN', `to:${to.id} 신규${assigned} 재배정${reassigned}`); return { to: to.name, assigned, reassigned }; });
@@ -703,7 +703,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   on('PUT', '/api/admin/settings', (b) => {
     admin();
     if (b.ipPolicy === 'otp_outside' && !(b.allowedIps || []).length) throw new E(400, 'VALIDATION', '사무실 IP를 1개 이상 등록해야 이 정책을 켤 수 있습니다');
-    for (const k of ['counselorEntry', 'name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy']) if (b[k] !== undefined) settings[k] = b[k];
+    for (const k of ['callScheme', 'callPrefix', 'counselorEntry', 'name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy']) if (b[k] !== undefined) settings[k] = b[k];
     log('UPDATE_SETTINGS'); return settingsOut();
   });
   on('GET', '/api/admin/audit', (b, q) => {
@@ -977,7 +977,22 @@ async function callLead(id) {
   let r;
   try { r = await api('POST', `/api/leads/${id}/call`, {}); }
   catch (e) { if (e.code !== 'NIGHT_CONFIRM') throw e; if (!(await ask('야간 전화', e.message, { okText: '전화 걸기', danger: true }))) return; r = await api('POST', `/api/leads/${id}/call`, { confirmNight: true }); }
-  toast(`체험판: ${r.phone} 로 전화 연결 (실제로는 전화 앱이 열리고, 기록이 남습니다)`);
+  if (r.method === 'copy') {
+    // 링크를 못 받는 070 프로그램: 번호를 복사해 프로그램에 붙여 넣음 (사내 http 주소에서도 되도록 예전 방식으로도 시도)
+    const copied = await copyText(r.dial);
+    toast(copied ? `번호를 복사했습니다 — 070 프로그램에 붙여 넣으세요 (${r.dial})` : `복사하지 못했습니다. 이 번호로 거세요: ${r.dial}`);
+    return;
+  }
+  toast(`체험판: ${r.tel} 로 연결 (실제로는 PC 의 070 프로그램이 열리고, 기록이 남습니다)`);
+}
+async function copyText(t) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); return true; } } catch { /* 아래로 */ }
+  const ta = h('textarea', { style: 'position:fixed;left:-9999px;top:0' }, t);
+  document.body.append(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
 }
 
 // ---------- 날짜 ----------
@@ -1455,6 +1470,8 @@ async function settingsView(main) {
   const num = (v, min, max) => h('input', { type: 'number', min, max, value: String(v) });
   const name = h('input', { value: s.name }), idle = num(s.idleMin, 5, 120), ret = num(s.retentionMonths, 1, 60);
   const aw = num(s.alertWindowMin, 1, 240), ar = num(s.alertRevealMax, 1, 10000), av = num(s.alertViewMax, 1, 10000);
+  const scheme = h('select', {}, [['tel', 'tel: 링크 (대부분의 070 프로그램·윈도우 휴대폰과 연결)'], ['callto', 'callto: 링크 (일부 인터넷전화 프로그램)'], ['sip', 'sip: 링크 (SIP 소프트폰)'], ['copy', '번호 복사 (링크를 못 받는 프로그램)']].map(([v, l]) => h('option', { value: v, selected: s.callScheme === v }, l)));
+  const prefix = h('input', { value: s.callPrefix || '', placeholder: '없음', size: 4, inputmode: 'numeric' });
   const entry = h('select', {}, h('option', { value: '1', selected: s.counselorEntry }, '허용 — 상담사가 받은 문의를 직접 입력 (본인 담당)'), h('option', { value: '0', selected: !s.counselorEntry }, '막기 — 어드민만 입력'));
   const night = h('select', {}, h('option', { value: 'block', selected: s.nightPolicy === 'block' }, '차단 (야간 동의 없는 DB 는 전화 불가)'), h('option', { value: 'warn', selected: s.nightPolicy === 'warn' }, '경고 후 허용 (기록 남김)'));
   const pol = h('select', {}, h('option', { value: 'off', selected: s.ipPolicy === 'off' }, '끔 — 어디서나 비밀번호로'), h('option', { value: 'otp_outside', selected: s.ipPolicy === 'otp_outside' }, '사무실 IP 밖에서는 OTP 필수'));
@@ -1463,12 +1480,13 @@ async function settingsView(main) {
   add(main, h('div', { class: 'panel' }, h('h2', {}, '설정'),
     s.ipPolicy === 'off' ? h('div', { class: 'notice warn' }, '접속 IP 통제가 꺼져 있습니다. 인수인계 기준은 "사무실 IP 밖에서는 OTP 필수"입니다.') : null,
     h('div', { class: 'grid2' }, field('회사 이름', name), field('자동 로그아웃 (분)', idle, '5~120'), field('파기 기준 (마지막 처리 후 개월)', ret, '법무 검토 후 확정'), field('야간(21~08시) 전화', night), field('상담사 DB 직접 입력', entry)),
+    h('h3', {}, 'PC 전화 연결'), h('div', { class: 'grid2' }, field('[전화 걸기] 연결 방식', scheme, '070 프로그램에서 눌러 보고 안 걸리면 다른 방식으로 바꾸세요'), field('외부 발신 앞번호', prefix, '사내 교환기에서 밖으로 걸 때 누르는 번호 (예: 9). 없으면 비움')),
     h('h3', {}, '대량 열람 경고'), h('div', { class: 'grid2' }, field('시간 창 (분)', aw), field('번호 보기·전화 걸기 합계 기준', ar), field('상세 열람 기준', av)),
     h('h3', {}, '접속 통제'), h('div', { class: 'grid2' }, field('정책', pol, `지금 내 IP: ${s.myIp} (${s.myIpInside ? '목록 안' : '목록 밖'}) · 내 OTP ${s.myOtpEnabled ? '등록됨' : '미등록'}`), field('사무실 IP', ips)),
     h('h3', {}, '백업'), h('p', { class: 'small' }, s.backup.enabled ? `켜짐 · ${s.backup.dir} · 마지막 ${s.backup.last || '(오늘 이미 있음)'}${s.backup.lastError ? ` · 오류: ${s.backup.lastError}` : ''}` : h('span', { class: 'tag' }, '꺼짐 — 서버 .env 에 BACKUP_DIR·BACKUP_PASSWORD 를 넣으세요')),
     h('div', { class: 'row', style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: run(async () => {
       const allowedIps = ips.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [cidr, ...rest] = l.split(/\s+/); return { cidr, label: rest.join(' ') }; });
-      await api('PUT', '/api/admin/settings', { name: name.value.trim(), idleMin: Number(idle.value), retentionMonths: Number(ret.value), alertWindowMin: Number(aw.value), alertRevealMax: Number(ar.value), alertViewMax: Number(av.value), nightPolicy: night.value, counselorEntry: entry.value === '1', ipPolicy: pol.value, allowedIps });
+      await api('PUT', '/api/admin/settings', { name: name.value.trim(), idleMin: Number(idle.value), retentionMonths: Number(ret.value), alertWindowMin: Number(aw.value), alertRevealMax: Number(ar.value), alertViewMax: Number(av.value), nightPolicy: night.value, counselorEntry: entry.value === '1', callScheme: scheme.value, callPrefix: prefix.value.trim(), ipPolicy: pol.value, allowedIps });
       toast('저장했습니다'); render();
     }) }, '저장'))));
 }
