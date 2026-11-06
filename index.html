@@ -244,6 +244,9 @@ table.list .phone { white-space: nowrap; }
   .tablecard .pager { flex-wrap: wrap; }
   .strip { grid-auto-columns: 74px; }
 }
+.field .toggle { display: flex; flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.field .toggle input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--brand); }
+.modal .field > span { color: var(--muted); }
 
 #demobar { position: fixed; right: 12px; bottom: 12px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 #demobar .demo-tog { font-size: 12px; padding: 6px 10px; border-radius: 16px; background: #fff8e1; border: 1px dashed #d9b44a; color: #6b4f00; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
@@ -285,7 +288,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   ];
   const batches = [{ id: 1, fileName: '11월_메타_네이버.xlsx', sheet: 'Sheet1', source: '(체험) 가상 대행사', purchasedAt: daysAgo(7).slice(0, 10), consentProof: '(체험) 제3자 제공 동의서 사본', adConsent: 'yes', nightConsent: 0, checkedBy: '[관리자]', memo: '', total: 60, inserted: 60, attached: 0, failed: 0, createdAt: daysAgo(7, 9), by: '[관리자]', undoneAt: null, undoneCount: 0 }];
   const leads = [], notes = [], entries = [], assignLog = [], audit = [], alerts = [], destroyLog = [];
-  const settings = { name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0 };
+  const settings = { counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0 };
   let seq = { lead: 0, note: 0, user: 4, batch: 1, audit: 0, alert: 0 };
   {
     const fam = '김이박최정강조윤장임', given = ['민지', '서연', '도윤', '하준', '지우', '서준', '예린', '시우', '채원', '지호'];
@@ -506,13 +509,45 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     return { token: 'demo-' + u.id, user: { id: u.id, name: u.name, role: u.role }, mustChangePassword: false };
   });
   on('POST', '/api/auth/logout', () => { me(); log('LOGOUT'); session = null; return { ok: true }; });
-  on('GET', '/api/me', () => { const u = me(); return { user: { id: u.id, name: u.name, role: u.role, idleMin: settings.idleMin, mustChangePassword: false, now: stamp() } }; });
+  on('GET', '/api/me', () => { const u = me(); return { user: { id: u.id, name: u.name, role: u.role, idleMin: settings.idleMin, mustChangePassword: false, now: stamp(), canEnter: u.role === 'admin' || settings.counselorEntry } }; });
   on('POST', '/api/auth/ping', () => ({ idleMin: settings.idleMin, remainingSec: settings.idleMin * 60 }));
   on('PUT', '/api/me/password', (b) => { const u = me(); if (b.current !== u.pw) throw new E(400, 'WRONG_PASSWORD', '지금 비밀번호가 올바르지 않습니다'); if (!/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(b.next || '')) throw new E(400, 'WEAK_PASSWORD', '비밀번호는 영문과 숫자를 섞어 8자 이상이어야 합니다'); u.pw = b.next; log('CHANGE_PASSWORD'); return { ok: true }; });
   on('GET', '/api/me/otp', () => { me(); return { enabled: false, recoveryLeft: 0, policy: settings.ipPolicy, inside: true, hasAllowedIps: false }; });
   on('POST', '/api/me/otp/setup', () => { throw new E(400, 'DEMO', '체험판에서는 OTP 등록을 해 볼 수 없습니다 (실제 서버에서 QR 코드로 등록)'); });
 
   on('GET', '/api/leads', (b, q) => { const u = me(); const out = listLeads(u, q); log('VIEW_LEAD_LIST', `${out.items.length}건${u.role === 'admin' ? '(전체번호)' : ''} p${out.page}`); return out; });
+  on('POST', '/api/leads', (b) => {
+    const u = me();
+    if (u.role === 'counselor' && !settings.counselorEntry) throw new E(403, 'ENTRY_CLOSED', '상담사 직접 입력이 꺼져 있습니다. 어드민에게 요청하세요');
+    const p = normPhone(String(b.phone || ''));
+    if (!p) throw new E(400, 'VALIDATION', '연락처 형식이 올바르지 않습니다');
+    if (!['direct', 'agency'].includes(b.channel)) throw new E(400, 'VALIDATION', '수집 경로를 고르세요');
+    let source = '본인 직접 문의', proof = '본인이 직접 문의 (제3자 제공 아님)';
+    if (b.channel === 'agency') {
+      if (!String(b.source || '').trim()) throw new E(400, 'VALIDATION', '판매처·대행사를 적어야 저장할 수 있습니다');
+      if (!String(b.consentProof || '').trim()) throw new E(400, 'VALIDATION', '제3자 제공 동의 증빙을 적어야 저장할 수 있습니다');
+      if (b.consentNamesUs !== true) throw new E(400, 'CONSENT_REQUIRED', '제3자 제공 동의서에 이 회사가 "제공받는 자"로 적혀 있는지 확인하고 체크해야 저장할 수 있습니다');
+      source = b.source.trim(); proof = b.consentProof.trim();
+    }
+    const assignTo = u.role === 'counselor' ? u.id : b.assignTo ? Number(b.assignTo) : null;
+    const ex = leads.find((l) => l.phone === p), now = stamp();
+    if (ex && b.confirmDuplicate !== true) {
+      const mine = u.role === 'counselor' && ex.assignedTo === u.id;
+      throw new E(409, 'DUPLICATE_PHONE', u.role === 'admin' ? `이미 등록된 번호입니다 (DB ${ex.id} · 담당 ${uname(ex.assignedTo) ?? '미배정'} · ${ex.status}). 확인을 누르면 기존 DB 에 재유입으로 붙입니다`
+        : mine ? '이미 내 DB 에 있는 번호입니다. 확인을 누르면 기존 DB 에 재유입으로 붙입니다' : '이미 등록된 번호입니다. 확인을 누르면 기존 담당자에게 재유입으로 붙습니다 (누구 담당인지는 어드민에게 확인하세요)');
+    }
+    let bt = batches.find((x) => x.fileName === '(직접 입력)' && x.source === source && x.consentProof === proof && x.createdAt.slice(0, 10) === today() && !x.undoneAt);
+    if (!bt) { bt = { id: ++seq.batch, fileName: '(직접 입력)', sheet: '', source, purchasedAt: '', consentProof: proof, adConsent: b.channel === 'direct' ? 'yes' : 'unknown', nightConsent: 0, checkedBy: u.name, memo: '', total: 0, inserted: 0, attached: 0, failed: 0, createdAt: now, by: u.name, undoneAt: null, undoneCount: 0 }; batches.unshift(bt); }
+    const e = { batchId: bt.id, route: b.route || '', appliedAt: b.appliedAt || today(), interest: b.interest || '', memo: b.memo || '', at: now };
+    bt.total++;
+    if (ex) { bt.attached++; ex.inflowCount++; ex.lastInflowAt = now; if (ex.assignedTo && ex.assignedTo !== u.id) ex.reinflow = 1; ex.version++; entries.push({ ...e, leadId: ex.id, isFirst: 0 }); log('ENTRY_ATTACH', String(ex.id)); return { attached: true, leadId: u.role === 'admin' || ex.assignedTo === u.id ? ex.id : null }; }
+    const l = { id: ++seq.lead, name: String(b.name || '').trim(), phone: p, route: e.route, appliedAt: e.appliedAt, interest: e.interest, memo: e.memo, batchId: bt.id, assignedTo: null, assignedAt: '', status: '연락대기', recallDate: '', inflowCount: 1, reinflow: 0,
+      lastInflowAt: now, lastActionAt: '', version: 1, createdAt: now, reservedAt: '', visitAt: '', visitCounselor: '', visitStatus: '', payAmount: 0, absentCount: 0 };
+    leads.push(l); entries.push({ ...e, leadId: l.id, isFirst: 1 }); bt.inserted++;
+    if (assignTo) setOwner(u, l, assignTo, 'assign');
+    log('ENTRY_LEAD', String(l.id));
+    return { attached: false, leadId: l.id };
+  });
   on('GET', '/api/leads/facets', (b, q) => facets(me(), q));
   on('GET', '/api/leads/:id', (b, q, p) => {
     const u = me(), l = getLead(u, p.id);
@@ -668,7 +703,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   on('PUT', '/api/admin/settings', (b) => {
     admin();
     if (b.ipPolicy === 'otp_outside' && !(b.allowedIps || []).length) throw new E(400, 'VALIDATION', '사무실 IP를 1개 이상 등록해야 이 정책을 켤 수 있습니다');
-    for (const k of ['name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy']) if (b[k] !== undefined) settings[k] = b[k];
+    for (const k of ['counselorEntry', 'name', 'idleMin', 'ipPolicy', 'allowedIps', 'retentionMonths', 'alertWindowMin', 'alertRevealMax', 'alertViewMax', 'nightPolicy']) if (b[k] !== undefined) settings[k] = b[k];
     log('UPDATE_SETTINGS'); return settingsOut();
   });
   on('GET', '/api/admin/audit', (b, q) => {
@@ -871,6 +906,9 @@ function icon(name, size = 18) {
   return svg;
 }
 
+// 휴대폰 폭(860px 이하)에서는 메뉴가 기본으로 접혀 있고, ☰ 로 펼침 (CSS 와 같은 기준)
+const isNarrow = () => matchMedia('(max-width: 860px)').matches;
+
 function render(msg) {
   watermark();
   clear($app);
@@ -887,8 +925,9 @@ function render(msg) {
       h('span', { class: 'brand' }, S.meta.company || 'DB 분배'), h('span', { class: 'brand-sub' }, 'DB 분배'), h('span', { class: 'grow' }),
       h('span', { class: 'who' }, icon('me', 18), `${S.me.name} · ${S.me.role === 'admin' ? '어드민' : '상담사'}`),
       h('button', { class: 'iconbtn', title: '로그아웃', onclick: run(async () => { await api('POST', '/api/auth/logout').catch(() => {}); logoutLocal('로그아웃했습니다'); }) }, icon('out', 20))),
-    h('nav', { class: 'side' }, tabs.map(([k, label, ic]) => h('button', { class: S.tab === k ? 'on' : '', onclick: () => { S.tab = k; render(); } }, icon(ic), h('span', {}, label), k === 'home' && alertCount ? h('span', { class: 'badge' }, alertCount) : null))),
-    h('div', { class: 'page' }, h('h1', { class: 'title' }, TITLES[S.tab]), main));
+    h('nav', { class: 'side' }, tabs.map(([k, label, ic]) => h('button', { class: S.tab === k ? 'on' : '', onclick: () => { S.tab = k; if (isNarrow()) S.navClosed = false; render(); } }, icon(ic), h('span', {}, label), k === 'home' && alertCount ? h('span', { class: 'badge' }, alertCount) : null))),
+    // 휴대폰: 메뉴가 펼쳐진 상태에서 본문을 누르면 메뉴를 닫음
+    h('div', { class: 'page', onclick: () => { if (isNarrow() && shell.classList.contains('nav-closed')) { S.navClosed = false; shell.classList.remove('nav-closed'); } } }, h('h1', { class: 'title' }, TITLES[S.tab]), main));
   $app.append(shell);
   const view = { home: homeView, leads: (m) => leadsView('admin', m), my: (m) => leadsView('counselor', m), import: importView, users: usersView, audit: auditView, destroy: destroyView, settings: settingsView, me: meView }[S.tab];
   run(view)(main);
@@ -1052,6 +1091,7 @@ async function leadsView(mode, main) {
       isAdmin ? h('button', { onclick: () => autoDialog(users.filter((u) => u.active), [...picked], f, reload) }, '자동 분배') : null,
       isAdmin ? h('span', { class: 'muted small' }, `미배정 ${fmt(r.unassigned)}건`) : null,
       !isAdmin ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: f.recall === 'today', onchange: (e) => { f.recall = e.target.checked ? 'today' : ''; f.page = 1; reload(); } }), '오늘까지 재연락') : null,
+      isAdmin || S.me.canEnter ? h('button', { class: 'primary', onclick: () => entryDialog(isAdmin, users, reload, openDetail) }, '+ DB 직접 입력') : null,
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: f.reinflow === '1', onchange: (e) => { f.reinflow = e.target.checked ? '1' : ''; f.page = 1; reload(); } }), '재유입만'),
       h('span', { class: 'grow' }),
       h('div', { class: 'searchbox' }, qIn, h('button', { class: 'iconbtn', title: '검색', onclick: () => { f.q = qIn.value.trim(); f.page = 1; reload(); } }, icon('search'))));
@@ -1196,6 +1236,48 @@ async function leadsView(mode, main) {
 
 const ASSIGN_LABEL = { assign: '배정', reassign: '재배정', reclaim: '회수', auto: '자동 분배', suspend: '계정 정지로 회수' };
 
+// ---------- DB 직접 입력 (전화·방문·홈페이지 문의 또는 대행사가 한 건씩 보낸 DB) ----------
+function entryDialog(isAdmin, users, reload, openDetail) {
+  const fd = (label, el, req) => h('label', { class: 'field' }, h('span', { class: req ? 'req' : '' }, label), el);
+  const name = h('input', { placeholder: '홍길동' }), phone = h('input', { inputmode: 'tel', placeholder: '010-1234-5678' });
+  const route = h('input', { placeholder: '예) 전화 문의, 홈페이지, 소개' }), interest = h('input', { placeholder: '예) 임플란트' });
+  const applied = h('input', { type: 'date', value: ymd(new Date()) }), memo = h('textarea', { rows: 2, placeholder: '통화 가능 시간, 문의 내용 등' });
+  const direct = h('input', { type: 'radio', name: 'ch', checked: true }), agency = h('input', { type: 'radio', name: 'ch' });
+  const src = h('input', { placeholder: '예) ○○애드' }), proof = h('input', { placeholder: '예) 제3자 제공 동의서 사본 — 공유폴더/증빙/...' }), names = h('input', { type: 'checkbox' });
+  const agencyBox = h('div', { class: 'stack', hidden: true }, fd('판매처·대행사', src, true), fd('제3자 제공 동의 증빙', proof, true), h('label', { class: 'toggle' }, names, h('span', { class: 'req' }, '동의서에 이 회사가 "제공받는 자"로 적혀 있음을 확인했습니다')));
+  const sync = () => { agencyBox.hidden = !agency.checked; };
+  direct.addEventListener('change', sync); agency.addEventListener('change', sync);
+  const owner = isAdmin ? h('select', {}, h('option', { value: '' }, '미배정으로 두기'), users.filter((u) => u.active).map((u) => h('option', { value: String(u.id) }, u.name))) : null;
+  const err = h('div', { class: 'err' });
+  const body = h('div', { class: 'stack' },
+    h('div', { class: 'grid2' }, fd('이름', name), fd('연락처', phone, true)),
+    h('div', { class: 'field' }, h('span', { class: 'req' }, '수집 경로'),
+      h('label', { class: 'toggle' }, direct, '본인 직접 문의 (전화·방문·홈페이지 — 증빙 필요 없음)'),
+      h('label', { class: 'toggle' }, agency, '대행사·구매 DB (출처와 동의 증빙 필수)')),
+    agencyBox,
+    h('div', { class: 'grid2' }, fd('유입경로', route), fd('신청일', applied), fd('관심 항목', interest), isAdmin ? fd('담당 상담사', owner) : h('div', { class: 'field' }, h('span', {}, '담당'), h('div', { class: 'muted small' }, '내 담당으로 들어갑니다'))),
+    fd('메모', memo), err);
+  modal('DB 직접 입력', body, (close) => [h('button', { onclick: close }, '취소'), h('button', { class: 'primary', onclick: async () => {
+    err.textContent = '';
+    const req = { name: name.value.trim(), phone: phone.value.trim(), channel: agency.checked ? 'agency' : 'direct', source: src.value.trim(), consentProof: proof.value.trim(), consentNamesUs: names.checked,
+      route: route.value.trim(), appliedAt: applied.value, interest: interest.value.trim(), memo: memo.value.trim(), assignTo: owner && owner.value ? Number(owner.value) : undefined };
+    try {
+      let r;
+      try { r = await api('POST', '/api/leads', req); }
+      catch (e) {
+        if (e.code !== 'DUPLICATE_PHONE') throw e;
+        if (!(await ask('이미 등록된 번호', e.message, { okText: '재유입으로 붙이기' }))) return;
+        r = await api('POST', '/api/leads', { ...req, confirmDuplicate: true });
+      }
+      close();
+      toast(r.attached ? '기존 DB 에 재유입으로 붙였습니다' : 'DB를 등록했습니다');
+      reload();
+      if (r.leadId) openDetail(r.leadId);
+    } catch (e) { err.textContent = e.message; }
+  } }, '저장')]);
+  setTimeout(() => phone.focus(), 0);
+}
+
 function autoDialog(active, selected, f, reload) {
   const picks = new Set(active.map((u) => u.id));
   const mode = h('select', {}, h('option', { value: 'even' }, '균등 — 진행 중 건수가 적은 상담사부터'), h('option', { value: 'round' }, '순번 — 지난번 마지막 상담사 다음부터 한 건씩'));
@@ -1325,7 +1407,7 @@ async function usersView(main) {
 const ACTION_LABEL = { LOGIN: '로그인', LOGIN_FAIL: '로그인 실패', LOGIN_BLOCKED: '로그인 차단', LOGOUT: '로그아웃', OTP_FAIL: 'OTP 실패', IDLE_LOGOUT: '자동 로그아웃', IP_BLOCKED: 'IP 차단',
   VIEW_LEAD_LIST: '목록 조회', VIEW_LEAD: '상세 열람', REVEAL_PHONE: '번호 보기', CALL_PHONE: '전화 걸기', UPDATE_LEAD: '상태 변경', ADD_NOTE: '메모', ASSIGN: '배정', RECLAIM: '회수', AUTO_ASSIGN: '자동 분배',
   EXPORT: '다운로드', IMPORT_UPLOAD: '파일 올림', IMPORT_LEADS: 'DB 등록', IMPORT_UNDO: '업로드 되돌림', CREATE_USER: '계정 생성', UPDATE_USER: '계정 변경', UPDATE_SETTINGS: '설정 변경', DESTROY_LEADS: '파기',
-  VIEW_AUDIT: '접속기록 조회', ACK_ALERT: '경고 확인', CHANGE_PASSWORD: '비밀번호 변경', OTP_ENROLL: 'OTP 등록' };
+  ENTRY_LEAD: 'DB 직접 입력', ENTRY_ATTACH: '직접 입력(재유입)', VIEW_AUDIT: '접속기록 조회', ACK_ALERT: '경고 확인', CHANGE_PASSWORD: '비밀번호 변경', OTP_ENROLL: 'OTP 등록' };
 async function auditView(main) {
   const f = Object.assign({ userId: '', action: '', from: '', to: '', leadId: '', page: 1 }, S.auditFilter || {});
   S.auditFilter = null;
@@ -1373,19 +1455,20 @@ async function settingsView(main) {
   const num = (v, min, max) => h('input', { type: 'number', min, max, value: String(v) });
   const name = h('input', { value: s.name }), idle = num(s.idleMin, 5, 120), ret = num(s.retentionMonths, 1, 60);
   const aw = num(s.alertWindowMin, 1, 240), ar = num(s.alertRevealMax, 1, 10000), av = num(s.alertViewMax, 1, 10000);
+  const entry = h('select', {}, h('option', { value: '1', selected: s.counselorEntry }, '허용 — 상담사가 받은 문의를 직접 입력 (본인 담당)'), h('option', { value: '0', selected: !s.counselorEntry }, '막기 — 어드민만 입력'));
   const night = h('select', {}, h('option', { value: 'block', selected: s.nightPolicy === 'block' }, '차단 (야간 동의 없는 DB 는 전화 불가)'), h('option', { value: 'warn', selected: s.nightPolicy === 'warn' }, '경고 후 허용 (기록 남김)'));
   const pol = h('select', {}, h('option', { value: 'off', selected: s.ipPolicy === 'off' }, '끔 — 어디서나 비밀번호로'), h('option', { value: 'otp_outside', selected: s.ipPolicy === 'otp_outside' }, '사무실 IP 밖에서는 OTP 필수'));
   const ips = h('textarea', { rows: 4, placeholder: '한 줄에 하나: 211.234.10.0/24 사무실' }, s.allowedIps.map((x) => `${x.cidr} ${x.label}`.trim()).join('\n'));
   const field = (label, el, hint) => h('label', { class: 'field' }, h('span', {}, label), el, hint ? h('span', { class: 'small muted' }, hint) : null);
   add(main, h('div', { class: 'panel' }, h('h2', {}, '설정'),
     s.ipPolicy === 'off' ? h('div', { class: 'notice warn' }, '접속 IP 통제가 꺼져 있습니다. 인수인계 기준은 "사무실 IP 밖에서는 OTP 필수"입니다.') : null,
-    h('div', { class: 'grid2' }, field('회사 이름', name), field('자동 로그아웃 (분)', idle, '5~120'), field('파기 기준 (마지막 처리 후 개월)', ret, '법무 검토 후 확정'), field('야간(21~08시) 전화', night)),
+    h('div', { class: 'grid2' }, field('회사 이름', name), field('자동 로그아웃 (분)', idle, '5~120'), field('파기 기준 (마지막 처리 후 개월)', ret, '법무 검토 후 확정'), field('야간(21~08시) 전화', night), field('상담사 DB 직접 입력', entry)),
     h('h3', {}, '대량 열람 경고'), h('div', { class: 'grid2' }, field('시간 창 (분)', aw), field('번호 보기·전화 걸기 합계 기준', ar), field('상세 열람 기준', av)),
     h('h3', {}, '접속 통제'), h('div', { class: 'grid2' }, field('정책', pol, `지금 내 IP: ${s.myIp} (${s.myIpInside ? '목록 안' : '목록 밖'}) · 내 OTP ${s.myOtpEnabled ? '등록됨' : '미등록'}`), field('사무실 IP', ips)),
     h('h3', {}, '백업'), h('p', { class: 'small' }, s.backup.enabled ? `켜짐 · ${s.backup.dir} · 마지막 ${s.backup.last || '(오늘 이미 있음)'}${s.backup.lastError ? ` · 오류: ${s.backup.lastError}` : ''}` : h('span', { class: 'tag' }, '꺼짐 — 서버 .env 에 BACKUP_DIR·BACKUP_PASSWORD 를 넣으세요')),
     h('div', { class: 'row', style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: run(async () => {
       const allowedIps = ips.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [cidr, ...rest] = l.split(/\s+/); return { cidr, label: rest.join(' ') }; });
-      await api('PUT', '/api/admin/settings', { name: name.value.trim(), idleMin: Number(idle.value), retentionMonths: Number(ret.value), alertWindowMin: Number(aw.value), alertRevealMax: Number(ar.value), alertViewMax: Number(av.value), nightPolicy: night.value, ipPolicy: pol.value, allowedIps });
+      await api('PUT', '/api/admin/settings', { name: name.value.trim(), idleMin: Number(idle.value), retentionMonths: Number(ret.value), alertWindowMin: Number(aw.value), alertRevealMax: Number(ar.value), alertViewMax: Number(av.value), nightPolicy: night.value, counselorEntry: entry.value === '1', ipPolicy: pol.value, allowedIps });
       toast('저장했습니다'); render();
     }) }, '저장'))));
 }
