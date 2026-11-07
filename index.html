@@ -49,9 +49,14 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 16px; margin: 0 0 12px; } h3 
 .chip b { margin-left: 4px; }
 .chip.on { background: var(--brand); color: #fff; border-color: var(--brand); }
 .st { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #eef0f3; white-space: nowrap; }
-.st.s-연락대기 { background: #e8eefc; color: #1f4fd1; } .st.s-부재중, .st.s-재연락 { background: var(--warn-soft); color: #8a5a10; }
-.st.s-예약성공, .st.s-방문성공, .st.s-결제성공, .st.s-리워드 { background: var(--ok-soft); color: var(--ok); }
-.st.s-예약실패, .st.s-방문취소, .st.s-결제실패, .st.s-결번 { background: var(--danger-soft); color: var(--danger); }
+.st.g-new { background: #e8eefc; color: #1f4fd1; }
+.st.g-ok { background: #1f4fd1; color: #fff; }
+.st.g-fail { background: #dfe7ee; color: #3d5266; }
+.st.g-absent { background: #dcecfb; color: #1d5f99; }
+.st.g-long { background: #fbe1e4; color: #a33a48; }
+.st.g-recall { background: #fdf0c4; color: #7a5a00; }
+.st.g-refuse { background: #b3261e; color: #fff; }
+.st.g-quality { background: #4a3b2c; color: #fff; }
 .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 4px; background: #fdecea; color: var(--danger); margin-left: 4px; }
 .tag.blue { background: var(--brand-soft); color: var(--brand); }
 
@@ -162,7 +167,9 @@ table.list td.date2 div { white-space: nowrap; line-height: 1.35; }
 table.list .empty { padding: 40px; color: var(--muted); }
 .small-btn { font-size: 12px; padding: 5px 10px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
 .small-btn.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
-.vst { font-size: 12px; } .vst.v-방문 { color: var(--ok); font-weight: 600; } .vst.v-부도부재, .vst.v-최종취소 { color: var(--danger); } .vst.v-예약취소 { color: var(--warn); }
+.vst { font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.vst.g-done { background: #1e7a4c; color: #fff; } .vst.g-cancel { background: #b3261e; color: #fff; } .vst.g-noshow { background: #7a3e12; color: #fff; }
+.tag.warn { background: var(--warn-soft); color: #8a5a10; }
 .tablecard .pager { padding: 12px 16px; border-top: 1px solid var(--line); margin: 0; }
 .selbar { position: fixed; left: calc(var(--side) + 24px); right: 24px; bottom: 16px; display: none; gap: 10px; align-items: center; background: #161b26; color: #fff; padding: 10px 14px; border-radius: 12px; z-index: 30; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .selbar.on { display: flex; }
@@ -278,9 +285,10 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   const mem = {};
   window.SS = { getItem: (k) => { try { return sessionStorage.getItem(k); } catch { return mem[k] ?? null; } }, setItem: (k, v) => { try { sessionStorage.setItem(k, v); } catch { mem[k] = v; } }, removeItem: (k) => { try { sessionStorage.removeItem(k); } catch { delete mem[k]; } } };
 
-  const STATUSES = ['연락대기', '상담진행중', '부재중', '장기부재', '재연락', '예약성공', '예약실패', '방문성공', '방문취소', '결제성공', '결제실패', '결번', '중복신청', '기타', '리워드'];
-  const VISIT = ['방문', '부도부재', '예약취소', '최종취소'];
-  const OPEN = ['연락대기', '상담진행중', '부재중', '재연락', '예약성공'];
+  const STATUSES = ['연락대기', '예약성공', '예약실패', '부재', '장기부재', '리콜약속', '상담거부', '지방거부', '진료불가', '결번', '본인아님/미신청', '중복', '타사 중복'];
+  const QUALITY = ['결번', '본인아님/미신청', '중복', '타사 중복'];
+  const VISIT = ['내원완료', '내원취소', '내원부도'];
+  const OPEN = ['연락대기', '부재', '리콜약속', '예약성공'];
   const p2 = (n) => String(n).padStart(2, '0');
   const stamp = (d = new Date()) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
   const today = () => stamp().slice(0, 10);
@@ -297,13 +305,15 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   const batches = [{ id: 1, fileName: '11월_메타_네이버.xlsx', sheet: 'Sheet1', source: '(체험) 가상 대행사', purchasedAt: daysAgo(7).slice(0, 10), consentProof: '(체험) 제3자 제공 동의서 사본', adConsent: 'yes', nightConsent: 0, checkedBy: '[관리자]', memo: '', total: 60, inserted: 60, attached: 0, failed: 0, createdAt: daysAgo(7, 9), by: '[관리자]', undoneAt: null, undoneCount: 0 }];
   const leads = [], notes = [], entries = [], assignLog = [], audit = [], alerts = [], destroyLog = [];
   const settings = { callScheme: 'tel', callPrefix: '', counselorEntry: true, name: '본사', idleMin: 30, ipPolicy: 'off', allowedIps: [], retentionMonths: 6, alertWindowMin: 10, alertRevealMax: 50, alertViewMax: 150, nightPolicy: 'block', rrCursor: 0,
-    perfWeights: { payCount: 5, payRate: 3, payAmount: 0, reserveRate: 2, visitRate: 0 }, perfPeriod: '30', perfMinSample: 10, perfFloorPct: 50 };
+    perfWeights: { convRate: 6, visitRate: 3, reserveCount: 1, visitCount: 0, reserveRate: 0 }, perfPeriod: '30', perfMinSample: 8, perfFloorPct: 50 };
   let seq = { lead: 0, note: 0, user: 4, batch: 1, audit: 0, alert: 0 };
   {
     const fam = '김이박최정강조윤장임', given = ['민지', '서연', '도윤', '하준', '지우', '서준', '예린', '시우', '채원', '지호'];
     const routes = ['메타 광고', '네이버 검색', '카카오 모먼트', '유튜브'], items = ['임플란트', '교정', '라미네이트', '미백', '스케일링'];
-    const plan = [['상담진행중'], ['부재중', 2], ['장기부재', 4], ['재연락'], ['예약성공', 0, daysLater(5, 14), '', '김실장'], ['예약성공', 0, daysLater(6, 10, 30), '', '박실장'],
-      ['방문성공', 0, daysLater(-1, 11), '방문', '김실장'], ['결제성공', 0, daysLater(-2, 15), '방문', '김실장', 2800000], ['예약실패'], ['방문취소', 0, daysLater(-3, 16), '부도부재', '박실장'], ['연락대기'], ['결번']];
+    // 13가지(상담사 3명과 서로소) → 상담사마다 상태가 고루 섞임
+    const plan = [['리콜약속'], ['부재', 2], ['장기부재', 4], ['예약성공', 0, daysLater(5, 14), '', '김실장'], ['예약성공', 0, daysLater(-2, 11), '내원완료', '김실장', 2800000],
+      ['예약성공', 0, daysLater(-1, 15), '내원완료', '박실장'], ['예약실패'], ['예약성공', 0, daysLater(-3, 16), '내원부도', '박실장'], ['연락대기'], ['결번'], ['본인아님/미신청'],
+      ['상담거부'], ['예약성공', 0, daysLater(-4, 10, 30), '내원취소', '김실장']];
     for (let i = 0; i < 60; i++) {
       const created = daysAgo(Math.floor(i / 9), 9 + (i % 9), (i * 7) % 60);
       const l = { id: ++seq.lead, name: fam[i % 10] + given[(i * 3) % 10], phone: `010-0000-${1000 + i}`, route: routes[i % 4], appliedAt: created.slice(0, 10), interest: items[i % 5], memo: i % 11 === 0 ? '오후 통화 선호' : '',
@@ -313,14 +323,15 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
       if (i < 36) {
         const [st, ab = 0, va = '', vs = '', vc = '', pay = 0] = plan[i % plan.length];
         Object.assign(l, { assignedTo: 2 + (i % 3), assignedAt: daysAgo(Math.floor(i / 9), 18), status: st, absentCount: ab, visitAt: va, visitStatus: vs, visitCounselor: vc, payAmount: pay,
-          reservedAt: va ? daysAgo(3 + (i % 3), 13, 20) : '', recallDate: st === '재연락' ? today() : '', lastActionAt: st === '연락대기' ? '' : daysAgo(i % 3, 16) });
+          reservedAt: va ? daysAgo(Math.floor(i / 9), 19, 10 + (i % 40)) : '', recallDate: st === '리콜약속' ? today() : '', lastActionAt: st === '연락대기' ? '' : daysAgo(i % 3, 16) });
         assignLog.push({ leadId: l.id, action: 'auto', from: null, to: l.assignedTo, by: 1, at: l.assignedAt });
-        if (st !== '연락대기') notes.push({ id: ++seq.note, leadId: l.id, by: l.assignedTo, body: st === '재연락' ? '오늘 저녁 다시 연락 요청' : '', statusFrom: '연락대기', statusTo: st, at: l.lastActionAt });
+        if (st !== '연락대기') notes.push({ id: ++seq.note, leadId: l.id, by: l.assignedTo, body: st === '리콜약속' ? '오늘 저녁 다시 연락 요청' : '', statusFrom: '연락대기', statusTo: st, at: l.lastActionAt });
       }
       if (i === 5) { l.inflowCount = 2; l.reinflow = 1; l.lastInflowAt = daysAgo(0, 9); entries.push({ leadId: l.id, batchId: 1, isFirst: 0, route: '카카오 모먼트', appliedAt: today(), interest: '임플란트', memo: '재신청', at: l.lastInflowAt }); }
-      // 실적 화면이 한쪽으로만 쏠리지 않도록 몇 건 손봄 (A 결제 2건, C 예약 1건)
-      if (i === 0 || i === 24) Object.assign(l, { status: '결제성공', visitAt: daysLater(-4, 11), visitStatus: '방문', visitCounselor: '김실장', payAmount: 1900000, reservedAt: daysAgo(6, 10) });
-      if (i === 2) Object.assign(l, { status: '예약성공', absentCount: 0, visitAt: daysLater(4, 15), visitCounselor: '박실장', reservedAt: daysAgo(1, 15) });
+      // 실적 화면이 고르게 보이도록 몇 건 손봄
+      if (i === 0 || i === 27) Object.assign(l, { status: '예약성공', visitAt: daysLater(-4, 11), visitStatus: '내원완료', visitCounselor: '김실장', payAmount: 1900000, reservedAt: daysAgo(6, 10) });
+      if (i === 14) Object.assign(l, { status: '타사 중복' });
+      if (i === 17) Object.assign(l, { status: '중복', visitAt: '', visitStatus: '', reservedAt: '' });
       leads.push(l);
     }
   }
@@ -354,7 +365,7 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     const term = (q.get('q') || '').trim();
     return leads.filter((l) => {
       if (!inScope(u, l)) return false;
-      if (q.get('recall') === 'today' && !(l.status === '재연락' && l.recallDate && l.recallDate <= today())) return false;
+      if (q.get('recall') === 'today' && !(l.status === '리콜약속' && l.recallDate && l.recallDate <= today())) return false;
       if (q.get('reinflow') === '1' && !l.reinflow) return false;
       if (u.role === 'admin') {
         if (a.length && !a.some((x) => (x === 'none' ? l.assignedTo === null : l.assignedTo === Number(x)))) return false;
@@ -574,19 +585,19 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     const u = me(), l = getLead(u, p.id);
     if (!STATUSES.includes(b.status)) throw new E(400, 'VALIDATION', '상태 값이 올바르지 않습니다');
     if (Number(b.version) !== l.version) throw new E(409, 'VERSION_CONFLICT', '다른 사람이 먼저 바꿨습니다. 새로 불러온 뒤 다시 하세요');
-    if (b.visitStatus && !VISIT.includes(b.visitStatus)) throw new E(400, 'VALIDATION', '방문 상태값이 올바르지 않습니다');
+    if (b.visitStatus && !VISIT.includes(b.visitStatus)) throw new E(400, 'VALIDATION', '내원 상태값이 올바르지 않습니다');
     const from = l.status, now = stamp(), changes = [];
-    const absentUp = b.status === '부재중' && (from !== '부재중' || b.absentAgain === true);
+    const absentUp = b.status === '부재' && (from !== '부재' || b.absentAgain === true);
     if (absentUp) { l.absentCount++; changes.push(`부재 ${l.absentCount}회째`); }
     if (b.status === '예약성공' && !l.reservedAt) l.reservedAt = now;
     const va = b.visitAt === undefined ? l.visitAt : String(b.visitAt).replace('T', ' ');
     if (va !== l.visitAt) changes.push(`방문예정 ${va || '없음'}`);
     if (b.visitCounselor !== undefined && b.visitCounselor !== l.visitCounselor) changes.push(`방문상담사 ${b.visitCounselor || '없음'}`);
-    if (b.visitStatus !== undefined && b.visitStatus !== l.visitStatus) changes.push(`방문상태 ${b.visitStatus || '없음'}`);
+    if (b.visitStatus !== undefined && b.visitStatus !== l.visitStatus) changes.push(`내원상태 ${b.visitStatus || '없음'}`);
     const pay = b.payAmount === undefined ? l.payAmount : Number(b.payAmount) || 0;
     if (pay !== l.payAmount) changes.push(`결제금액 ${pay.toLocaleString('ko-KR')}원`);
     if (l.reinflow && l.assignedTo === u.id) changes.push('재유입 확인');
-    Object.assign(l, { status: b.status, recallDate: b.status === '재연락' ? b.recallDate || '' : '', visitAt: va, visitCounselor: b.visitCounselor ?? l.visitCounselor, visitStatus: b.visitStatus ?? l.visitStatus, payAmount: pay, reinflow: l.assignedTo === u.id ? 0 : l.reinflow, lastActionAt: now });
+    Object.assign(l, { status: b.status, recallDate: b.status === '리콜약속' ? b.recallDate || '' : '', visitAt: va, visitCounselor: b.visitCounselor ?? l.visitCounselor, visitStatus: b.visitStatus ?? l.visitStatus, payAmount: pay, reinflow: l.assignedTo === u.id ? 0 : l.reinflow, lastActionAt: now });
     l.version++;
     const note = String(b.note || '').trim();
     if (note || changes.length || from !== b.status) notes.push({ id: ++seq.note, leadId: l.id, by: u.id, body: [note, changes.length ? `[${changes.join(' · ')}]` : ''].filter(Boolean).join('\n'), statusFrom: from, statusTo: from === b.status ? '' : b.status, at: now });
@@ -608,9 +619,10 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
   on('POST', '/api/admin/assign', (b) => { const a = admin(), [to] = counselorsOf([b.to]); let assigned = 0, reassigned = 0; for (const id of b.leadIds || []) { const l = getLead(a, id); if (l.assignedTo === to.id) continue; l.assignedTo ? reassigned++ : assigned++; setOwner(a, l, to.id, l.assignedTo ? 'reassign' : 'assign'); } log('ASSIGN', `to:${to.id} 신규${assigned} 재배정${reassigned}`); return { to: to.name, assigned, reassigned }; });
   on('POST', '/api/admin/reclaim', (b) => { const a = admin(); let reclaimed = 0; for (const id of b.leadIds || []) { const l = getLead(a, id); if (l.assignedTo === null) continue; setOwner(a, l, null, 'reclaim'); reclaimed++; } log('RECLAIM', `${reclaimed}건`); return { reclaimed }; });
   // 실적 (서버 src/perf.ts 와 같은 계산)
-  const PM = ['payCount', 'payRate', 'payAmount', 'reserveRate', 'visitRate'];
-  const PL = { payCount: '결제 건수', payRate: '결제율', payAmount: '결제금액', reserveRate: '예약율', visitRate: '방문율' };
-  const PRESETS = { pay: { payCount: 5, payRate: 3, payAmount: 0, reserveRate: 2, visitRate: 0 }, reserve: { payCount: 1, payRate: 1, payAmount: 0, reserveRate: 6, visitRate: 2 }, balance: { payCount: 2, payRate: 2, payAmount: 2, reserveRate: 2, visitRate: 2 } };
+  const PM = ['convRate', 'visitRate', 'reserveCount', 'visitCount', 'reserveRate'];
+  const PL = { convRate: '내원전환율', visitRate: '내원율', reserveCount: '예약 수', visitCount: '내원 수', reserveRate: '예약전환율' };
+  const PDEF = { convRate: 6, visitRate: 3, reserveCount: 1, visitCount: 0, reserveRate: 0 };
+  const PRESETS = { visit: PDEF, reserve: { convRate: 2, visitRate: 0, reserveCount: 3, visitCount: 0, reserveRate: 5 }, balance: { convRate: 2, visitRate: 2, reserveCount: 2, visitCount: 2, reserveRate: 2 } };
   const normW = (v) => { const o = v && typeof v === 'object' ? v : {}, out = {}; for (const m of PM) { const n = o[m] === undefined ? 0 : Number(o[m]); if (!Number.isFinite(n) || n < 0 || n > 10) throw new E(400, 'VALIDATION', `${PL[m]} 비중은 0~10 사이여야 합니다`); out[m] = Math.round(n * 10) / 10; } if (PM.every((m) => out[m] === 0)) throw new E(400, 'VALIDATION', '비중을 하나 이상 0보다 크게 정하세요'); return out; };
   const addD = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   const pRange = (period, from, to) => {
@@ -620,22 +632,29 @@ body:has(.selbar.on) #demobar { bottom: 80px; }
     if (period === 'month') return { from: t.slice(0, 8) + '01', to: t, label: '이번 달' };
     return { from: addD(t, -29), to: t, label: '최근 30일' };
   };
+  // 서버 src/perf.ts 와 같은 계산 (예약·내원 중심, 품질 불량 제외)
   const computePerf = (o = {}) => {
     const weights = o.weights || settings.perfWeights, minSample = o.minSample ?? settings.perfMinSample, range = pRange(o.period || settings.perfPeriod, o.from, o.to);
     const end = addD(range.to, 1), pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
     const rows = users.filter((u) => u.role === 'counselor').sort((x, y) => y.active - x.active || x.sort - y.sort || x.id - y.id).map((u) => {
       const mine = leads.filter((l) => l.assignedTo === u.id && l.assignedAt >= range.from && l.assignedAt < end);
-      const reserved = mine.filter((l) => l.reservedAt).length, visited = mine.filter((l) => ['방문성공', '결제성공', '결제실패', '리워드'].includes(l.status) || l.visitStatus === '방문').length;
-      const paid = mine.filter((l) => ['결제성공', '리워드'].includes(l.status) || l.payAmount > 0).length, payAmount = mine.reduce((x, l) => x + (l.payAmount || 0), 0);
-      return { id: u.id, name: u.name, active: !!u.active, received: mine.length, reserved, visited, paid, payAmount, reserveRate: pct(reserved, mine.length), visitRate: pct(visited, mine.length), payRate: pct(paid, mine.length),
-        scores: { payCount: 0, payRate: 0, payAmount: 0, reserveRate: 0, visitRate: 0 }, composite: null, rank: null, pending: mine.length < minSample };
+      const good = mine.filter((l) => !QUALITY.includes(l.status)), excluded = mine.length - good.length, valid = good.length;
+      const reserved = good.filter((l) => l.reservedAt).length, visited = good.filter((l) => l.visitStatus === '내원완료').length;
+      const all = leads.filter((l) => l.assignedTo === u.id && !QUALITY.includes(l.status));
+      return { id: u.id, name: u.name, active: !!u.active, received: mine.length, excluded, valid, excludeRate: pct(excluded, mine.length), excludeFlag: false,
+        reserved, visited, canceled: good.filter((l) => l.visitStatus === '내원취소').length, noShow: good.filter((l) => l.visitStatus === '내원부도').length, payAmount: mine.reduce((x, l) => x + (l.payAmount || 0), 0),
+        visitRate: pct(visited, reserved), convRate: pct(visited, valid), reserveRate: pct(reserved, valid),
+        byDate: { reserved: all.filter((l) => l.reservedAt >= range.from && l.reservedAt < end).length, visited: all.filter((l) => l.visitStatus === '내원완료' && l.visitAt >= range.from && l.visitAt < end).length },
+        scores: { convRate: 0, visitRate: 0, reserveCount: 0, visitCount: 0, reserveRate: 0 }, composite: null, rank: null, pending: valid < minSample };
     });
-    const val = (r, m) => (m === 'payCount' ? r.paid : r[m]);
+    const tr = rows.reduce((x, r) => x + r.received, 0), te = rows.reduce((x, r) => x + r.excluded, 0), teamExcludeRate = pct(te, tr);
+    for (const r of rows) r.excludeFlag = r.excluded >= 3 && r.excludeRate > teamExcludeRate + 10;
+    const val = (r, m) => (m === 'reserveCount' ? r.reserved : m === 'visitCount' ? r.visited : r[m]);
     const judged = rows.filter((r) => !r.pending), wsum = PM.reduce((x, m) => x + weights[m], 0);
     for (const m of PM) { const top = Math.max(0, ...judged.map((r) => val(r, m))); for (const r of rows) r.scores[m] = top > 0 ? Math.round((val(r, m) / top) * 1000) / 10 : 0; }
     for (const r of judged) r.composite = Math.round((PM.reduce((x, m) => x + r.scores[m] * weights[m], 0) / wsum) * 10) / 10;
-    [...judged].sort((a, b) => b.composite - a.composite || b.paid - a.paid || a.id - b.id).forEach((r, i, arr) => { r.rank = i > 0 && arr[i - 1].composite === r.composite ? arr[i - 1].rank : i + 1; });
-    return { range, weights, minSample, rows };
+    [...judged].sort((a, b) => b.composite - a.composite || b.visited - a.visited || a.id - b.id).forEach((r, i, arr) => { r.rank = i > 0 && arr[i - 1].composite === r.composite ? arr[i - 1].rank : i + 1; });
+    return { range, weights, minSample, teamExcludeRate, rows };
   };
   const perfQuotas = (n, people, floorPct) => {
     const k = people.length, out = new Map(); if (!k || n <= 0) { for (const p of people) out.set(p.id, 0); return out; }
@@ -858,7 +877,10 @@ const clear = (el) => { while (el.firstChild) el.firstChild.remove(); return el;
 const add = (el, ...kids) => { for (const c of kids.flat(Infinity)) if (c !== null && c !== undefined && c !== false) el.append(c); return el; };
 const toast = (msg) => { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 2600); };
 const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
-const st = (s) => h('span', { class: 'st s-' + s }, s);
+// 상태 색: 구매자 시트 색과 비슷하게 묶음 (클래스 이름에 '/'·공백이 들어가지 않도록 묶음 이름으로)
+const ST_GROUP = { 연락대기: 'new', 예약성공: 'ok', 예약실패: 'fail', 부재: 'absent', 장기부재: 'long', 리콜약속: 'recall', 상담거부: 'refuse', 지방거부: 'refuse', 진료불가: 'refuse', 결번: 'quality', '본인아님/미신청': 'quality', 중복: 'quality', '타사 중복': 'quality' };
+const VST_GROUP = { 내원완료: 'done', 내원취소: 'cancel', 내원부도: 'noshow' };
+const st = (s) => h('span', { class: 'st g-' + (ST_GROUP[s] || 'etc') }, s);
 
 async function api(method, path, body, opt = {}) {
   const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}), ...(opt.auto ? { 'X-Auto': '1' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -1077,14 +1099,14 @@ const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); ret
 const FACETS_ADMIN = [['batchId', '업로드 (출처)', true], ['route', '유입경로 (매체)'], ['interest', '관심 항목'], ['assignee', '상담사']];
 const FACETS_COUNSELOR = [['route', '유입경로 (매체)'], ['interest', '관심 항목']];
 const BASIS = [['created', 'DB 유입일시'], ['reserved', '예약성공일시'], ['visit', '방문예정일시']];
-// 상태 줄: 총계 + 상태별 (부재는 '부재중' 한 칸, 횟수는 목록·상세에 표시)
+// 상태 줄: 총계 + 상태별 (부재는 '부재' 한 칸, 횟수는 목록·상세에 표시)
 const stripCells = () => [['총계', []], ...S.meta.statuses.map((x) => [x, [x]])];
 
 async function leadsView(mode, main) {
   const isAdmin = mode === 'admin';
   const preset = S.leadFilter || {};
   S.leadFilter = null;
-  // 어드민은 최근 한 달, 상담사는 전체 기간 (오래된 재연락 DB 를 놓치지 않도록)
+  // 어드민은 최근 한 달, 상담사는 전체 기간 (오래된 리콜약속 DB 를 놓치지 않도록)
   const f = { basis: 'created', from: isAdmin && !preset.keepAll ? monthAgo() : '', to: isAdmin && !preset.keepAll ? ymd(new Date()) : '', status: '', q: '', page: 1, size: 50, recall: '', reinflow: '',
     sel: { batchId: new Set(), route: new Set(), interest: new Set(), assignee: new Set() } };
   for (const k of Object.keys(f.sel)) if (preset[k]) { f.sel[k].add(String(preset[k])); f.from = ''; f.to = ''; }
@@ -1177,7 +1199,7 @@ async function leadsView(mode, main) {
       isAdmin ? h('button', { class: 'dark', onclick: run(download) }, icon('down', 16), '다운로드') : null,
       isAdmin ? h('button', { onclick: () => autoDialog(users.filter((u) => u.active), [...picked], f, reload) }, '자동 분배') : null,
       isAdmin ? h('span', { class: 'muted small' }, `미배정 ${fmt(r.unassigned)}건`) : null,
-      !isAdmin ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: f.recall === 'today', onchange: (e) => { f.recall = e.target.checked ? 'today' : ''; f.page = 1; reload(); } }), '오늘까지 재연락') : null,
+      !isAdmin ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: f.recall === 'today', onchange: (e) => { f.recall = e.target.checked ? 'today' : ''; f.page = 1; reload(); } }), '오늘까지 리콜') : null,
       isAdmin || S.me.canEnter ? h('button', { class: 'primary', onclick: () => entryDialog(isAdmin, users, reload, openDetail) }, '+ DB 직접 입력') : null,
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: f.reinflow === '1', onchange: (e) => { f.reinflow = e.target.checked ? '1' : ''; f.page = 1; reload(); } }), '재유입만'),
       h('span', { class: 'grow' }),
@@ -1186,7 +1208,7 @@ async function leadsView(mode, main) {
 
   function drawTable(r) {
     const all = h('input', { type: 'checkbox', checked: r.items.length > 0 && r.items.every((x) => picked.has(x.id)), onchange: (e) => { for (const x of r.items) e.target.checked ? picked.add(x.id) : picked.delete(x.id); drawTable(r); drawSel(); } });
-    const head = [isAdmin ? all : null, '번호', isAdmin ? '유입일시' : '받은 날', '유입경로\n관심 항목', '개인정보', isAdmin ? '상담사' : null, '상태', '예약성공일', '방문상태', '방문예정일', '상담내용'].filter((x) => x !== null);
+    const head = [isAdmin ? all : null, '번호', isAdmin ? '유입일시' : '받은 날', '유입경로\n관심 항목', '개인정보', isAdmin ? '상담사' : null, '상태', '예약성공일', '내원상태', '방문예정일', '상담내용'].filter((x) => x !== null);
     const two = (a, b) => [h('div', {}, a || '-'), h('div', { class: 'sub' }, b || '')];
     // 줄 아무 곳이나 누르면 고객관리 창 (휴대폰에서 오른쪽 끝 [상세보기]까지 밀지 않아도 되도록). 체크칸·버튼은 제외
     const rows = r.items.map((x) => h('tr', { class: 'click' + (current === x.id ? ' sel' : ''), onclick: (e) => { if (e.target.closest('input, button')) return; openDetail(x.id); } },
@@ -1196,9 +1218,9 @@ async function leadsView(mode, main) {
       h('td', { class: 'small' }, two(x.route, x.interest)),
       h('td', { class: 'person' }, h('div', {}, x.name || h('span', { class: 'muted' }, '(이름 없음)'), x.reinflow ? h('span', { class: 'tag' }, '재유입') : null, x.inflowCount > 1 && !x.reinflow ? h('span', { class: 'tag blue' }, `${x.inflowCount}회`) : null), h('div', { class: 'phone' }, x.phone)),
       isAdmin ? h('td', { class: 'nowrap' }, x.owner || h('span', { class: 'muted' }, '미배정')) : null,
-      h('td', {}, st(x.status), (x.status === '부재중' || x.status === '장기부재') && x.absentCount ? h('div', { class: 'small muted' }, `부재 ${x.absentCount}회`) : null, x.status === '재연락' && x.recallDate ? h('div', { class: 'small muted' }, x.recallDate) : null),
+      h('td', {}, st(x.status), (x.status === '부재' || x.status === '장기부재') && x.absentCount ? h('div', { class: 'small muted' }, `부재 ${x.absentCount}회`) : null, x.status === '리콜약속' && x.recallDate ? h('div', { class: 'small muted' }, x.recallDate) : null),
       h('td', { class: 'small date2' }, ...(x.reservedAt ? x.reservedAt.slice(0, 16).split(' ').map((p) => h('div', {}, p)) : ['-'])),
-      h('td', { class: 'nowrap' }, x.visitStatus ? h('span', { class: 'vst v-' + x.visitStatus }, x.visitStatus) : h('span', { class: 'muted' }, '-')),
+      h('td', { class: 'nowrap' }, x.visitStatus ? h('span', { class: 'vst g-' + (VST_GROUP[x.visitStatus] || 'etc') }, x.visitStatus) : h('span', { class: 'muted' }, '-')),
       h('td', { class: 'small nowrap' }, x.visitAt || '-'),
       h('td', {}, h('button', { class: 'small-btn', onclick: () => openDetail(x.id) }, '상세보기'))));
     const pages = Math.max(1, Math.ceil(r.total / r.size));
@@ -1209,8 +1231,8 @@ async function leadsView(mode, main) {
         isAdmin ? h('input', { type: 'checkbox', checked: picked.has(x.id), onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); drawSel(); } }) : null,
         h('b', { class: 'lc-name' }, x.name || '(이름 없음)'), x.reinflow ? h('span', { class: 'tag' }, '재유입') : null, h('span', { class: 'grow' }), st(x.status)),
       h('div', { class: 'lc-mid' }, h('span', { class: 'phone' }, x.phone),
-        (x.status === '부재중' || x.status === '장기부재') && x.absentCount ? h('span', { class: 'small muted' }, `부재 ${x.absentCount}회`) : null,
-        x.status === '재연락' && x.recallDate ? h('span', { class: 'small muted' }, `재연락 ${x.recallDate.slice(5)}`) : null,
+        (x.status === '부재' || x.status === '장기부재') && x.absentCount ? h('span', { class: 'small muted' }, `부재 ${x.absentCount}회`) : null,
+        x.status === '리콜약속' && x.recallDate ? h('span', { class: 'small muted' }, `리콜 ${x.recallDate.slice(5)}`) : null,
         x.visitAt ? h('span', { class: 'small muted' }, `방문 ${x.visitAt.slice(5)}`) : null),
       h('div', { class: 'lc-bot' }, h('span', { class: 'small muted grow' }, [x.route, x.interest, (isAdmin ? x.owner || '미배정' : (x.assignedAt || '').slice(5, 16))].filter(Boolean).join(' · ')),
         h('button', { class: 'callbtn', onclick: run(() => callLead(x.id)) }, '전화')))) : h('div', { class: 'empty muted' }, '해당하는 DB가 없습니다'));
@@ -1262,10 +1284,10 @@ async function leadsView(mode, main) {
     const phoneEl = h('span', { class: 'phonebox' }, d.phone);
     const statusSel = h('select', {}, S.meta.statuses.map((x) => h('option', { value: x, selected: x === d.status }, x)));
     const recall = h('input', { type: 'date', value: d.recallDate || '' });
-    const recallWrap = h('div', { class: 'ff' }, h('label', {}, '재연락일'), recall);
+    const recallWrap = h('div', { class: 'ff' }, h('label', {}, '리콜일'), recall);
     const again = h('input', { type: 'checkbox', checked: true });
     const againWrap = h('label', { class: 'toggle' }, again, `이번 통화도 부재 (부재 ${d.absentCount + 1}회째로 기록)`);
-    const syncRecall = () => { recallWrap.hidden = statusSel.value !== '재연락'; againWrap.hidden = !(d.status === '부재중' && statusSel.value === '부재중'); };
+    const syncRecall = () => { recallWrap.hidden = statusSel.value !== '리콜약속'; againWrap.hidden = !(d.status === '부재' && statusSel.value === '부재'); };
     statusSel.addEventListener('change', syncRecall);
     const [vd, vt] = (d.visitAt || '').split(' ');
     const visitDate = h('input', { type: 'date', value: vd || '' }), visitTime = h('input', { type: 'time', value: vt || '' });
@@ -1274,10 +1296,10 @@ async function leadsView(mode, main) {
     const vStatus = h('select', {}, h('option', { value: '' }, '선택해 주세요'), (S.meta.visitStatuses || []).map((x) => h('option', { value: x, selected: x === d.visitStatus }, x)));
     const pay = h('input', { inputmode: 'numeric', value: d.payAmount ? fmt(d.payAmount) : '', placeholder: '0', oninput: (e) => { const n = e.target.value.replace(/\D/g, ''); e.target.value = n ? fmt(Number(n)) : ''; } });
     const first = d.entries.find((e) => e.isFirst) || d.entries[d.entries.length - 1];
-    const paid = d.status === '결제성공' || d.status === '리워드' || d.payAmount > 0;
+    const paid = d.payAmount > 0;
     const save = run(async (thenGo) => {
       if (visitTime.value && !visitDate.value) return toast('방문예정 날짜를 고르세요');
-      const body = { status: statusSel.value, absentAgain: !againWrap.hidden && again.checked, version: d.version, recallDate: statusSel.value === '재연락' ? recall.value : '', note: note.value.trim(),
+      const body = { status: statusSel.value, absentAgain: !againWrap.hidden && again.checked, version: d.version, recallDate: statusSel.value === '리콜약속' ? recall.value : '', note: note.value.trim(),
         visitAt: visitDate.value ? `${visitDate.value}${visitTime.value ? ' ' + visitTime.value : ''}` : '', visitCounselor: vCounselor.value.trim(), visitStatus: vStatus.value, payAmount: Number(pay.value.replace(/\D/g, '') || 0) };
       try { await api('PUT', `/api/leads/${d.id}/status`, body); }
       catch (e) { if (e.code === 'VERSION_CONFLICT') { toast(e.message); openDetail(d.id); return; } throw e; }
@@ -1289,7 +1311,7 @@ async function leadsView(mode, main) {
     const ff = (label, ...kids) => h('div', { class: 'ff' }, h('label', {}, label), ...kids);
     box.classList.add('cm');
     add(box,
-      h('div', { class: 'cm-head' }, h('div', { class: 'grow' }, h('h2', {}, '고객관리'), paid ? h('span', { class: 'banner' }, '※ 결제가 완료된 고객입니다.') : null, d.reinflow ? h('span', { class: 'banner red' }, '※ 같은 번호로 다시 신청했습니다 (재유입).') : null),
+      h('div', { class: 'cm-head' }, h('div', { class: 'grow' }, h('h2', {}, '고객관리'), paid ? h('span', { class: 'banner' }, '※ 결제금액이 입력된 고객입니다.') : null, d.reinflow ? h('span', { class: 'banner red' }, '※ 같은 번호로 다시 신청했습니다 (재유입).') : null),
         h('button', { class: 'iconbtn', title: '닫기 (Esc)', onclick: closeDrawer }, icon('x', 26))),
       h('div', { class: 'cm-body' },
         h('div', { class: 'cm-left' },
@@ -1311,8 +1333,8 @@ async function leadsView(mode, main) {
           ff('방문예정일시', h('div', { class: 'row nowrap2' }, visitDate, visitTime)),
           ff('상담내용', note),
           ff('방문상담사', vCounselor),
-          ff('방문 상태값', vStatus),
-          ff('결제금액 (원)', pay))),
+          ff('내원 상태값', vStatus),
+          ff('결제금액 (원, 참고용)', pay))),
       h('div', { class: 'cm-foot' },
         h('button', { disabled: !prev, onclick: () => openDetail(prev) }, '이전 고객'), h('span', { class: 'grow' }),
         h('button', { onclick: closeDrawer }, '닫기'), h('button', { class: 'primary', onclick: () => save(null) }, '✓ 저장'),
@@ -1407,7 +1429,7 @@ async function perfView(main) {
   const w = { ...st.weights };
   let period = st.period, from = '', to = '', minSample = st.minSample;
   const tableBox = h('div'), dirty = h('span', { class: 'small muted' });
-  const presetLabel = { pay: '결제 중심 (기본)', reserve: '예약 중심', balance: '균형' };
+  const presetLabel = { visit: '내원 중심 (기본)', reserve: '예약 중심', balance: '균형' };
   const wIn = {};
   const markDirty = () => { const same = JSON.stringify(w) === JSON.stringify(d.settings.weights) && period === d.settings.period && minSample === d.settings.minSample && Number(floor.value) === d.settings.floorPct && !from && !to; dirty.textContent = same ? '' : '저장 안 됨 — [저장]해야 실적순 분배에 반영됩니다'; };
   const preset = h('select', { onchange: () => { const p = d.presets[preset.value]; if (!p) return; Object.assign(w, p); for (const k in wIn) wIn[k].value = String(w[k]); reload(); } },
@@ -1432,23 +1454,32 @@ async function perfView(main) {
   }
   function draw() {
     clear(tableBox);
-    const ms = d.metrics;
+    const ms = d.metrics.filter((m) => w[m.k] > 0);
     const rows = [...d.rows].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || Number(b.active) - Number(a.active) || b.received - a.received);
-    add(tableBox, h('div', { class: 'small muted', style: 'margin:4px 0 8px' }, `${d.range.label} (${d.range.from} ~ ${d.range.to}) 에 배정받은 DB 기준 · 점수는 항목마다 1등 = 100`),
+    const R = (...k) => h('td', { class: 'right' }, ...k);
+    const sub = (t) => h('div', { class: 'sub' }, t);
+    const empty = h('tr', {}, h('td', { class: 'muted', colspan: 99 }, '상담사 계정이 없습니다'));
+    add(tableBox, h('div', { class: 'small muted', style: 'margin:4px 0 8px' }, `${d.range.label} (${d.range.from} ~ ${d.range.to}) 에 배정받은 DB 기준 · DB 수 = 받은 DB − 품질 불량 · 팀 평균 제외율 ${d.teamExcludeRate}%`),
       h('div', { class: 'tablewrap' }, h('table', { class: 'list' },
-        h('thead', {}, h('tr', {}, h('th', {}, '순위'), h('th', {}, '상담사'), h('th', { class: 'right' }, '받은 DB'), h('th', { class: 'right' }, '예약'), h('th', { class: 'right' }, '방문'), h('th', { class: 'right' }, '결제'), h('th', { class: 'right' }, '결제금액'),
-          ms.map((m) => h('th', { class: 'right' + (w[m.k] ? '' : ' muted') }, `${m.label}`, h('div', { class: 'sub' }, `점수 · 비중 ${w[m.k]}`))), h('th', { class: 'right' }, '종합'))),
+        h('thead', {}, h('tr', {}, h('th', {}, '순위'), h('th', {}, '상담사'), h('th', { class: 'right' }, '받은 DB'), h('th', { class: 'right' }, '품질 불량', sub('제외율')), h('th', { class: 'right' }, 'DB 수'),
+          h('th', { class: 'right' }, '예약', sub('예약전환율')), h('th', { class: 'right' }, '내원'), h('th', { class: 'right' }, '취소'), h('th', { class: 'right' }, '부도'),
+          h('th', { class: 'right' }, '내원율', sub('내원/예약')), h('th', { class: 'right' }, '내원전환율', sub('내원/DB 수')), h('th', { class: 'right muted' }, '결제금액', sub('참고')), h('th', { class: 'right' }, '종합'))),
         h('tbody', {}, rows.length ? rows.map((r) => h('tr', { class: r.active ? '' : 'muted' },
           h('td', {}, r.pending ? h('span', { class: 'pill' }, '판단 보류') : h('b', {}, `${r.rank}위`)),
           h('td', { class: 'nowrap' }, r.name, r.active ? null : h('span', { class: 'tag' }, '정지')),
-          h('td', { class: 'right' }, fmt(r.received)),
-          h('td', { class: 'right' }, fmt(r.reserved), h('div', { class: 'sub' }, `${r.reserveRate}%`)),
-          h('td', { class: 'right' }, fmt(r.visited), h('div', { class: 'sub' }, `${r.visitRate}%`)),
-          h('td', { class: 'right' }, fmt(r.paid), h('div', { class: 'sub' }, `${r.payRate}%`)),
-          h('td', { class: 'right' }, fmt(r.payAmount)),
-          ms.map((m) => h('td', { class: 'right' + (w[m.k] ? '' : ' muted') }, r.pending ? '—' : String(r.scores[m.k]))),
-          h('td', { class: 'right' }, r.pending ? h('span', { class: 'muted small' }, `${d.minSample}건 미만`) : h('b', {}, String(r.composite)))))
-          : h('tr', {}, h('td', { class: 'muted', colspan: 99 }, '상담사 계정이 없습니다'))))));
+          R(fmt(r.received)),
+          R(fmt(r.excluded), sub(`${r.excludeRate}%`), r.excludeFlag ? h('span', { class: 'tag warn', title: '팀 평균보다 제외율이 크게 높습니다. 품질 불량 처리한 DB 를 확인해 보세요' }, '확인 필요') : null),
+          R(h('b', {}, fmt(r.valid))),
+          R(fmt(r.reserved), sub(`${r.reserveRate}%`)), R(fmt(r.visited)), R(fmt(r.canceled)), R(fmt(r.noShow)),
+          R(`${r.visitRate}%`), R(h('b', {}, `${r.convRate}%`)), h('td', { class: 'right muted' }, fmt(r.payAmount)),
+          R(r.pending ? h('span', { class: 'muted small' }, `DB ${d.minSample}건 미만`) : h('b', {}, String(r.composite))))) : empty))),
+      h('h3', { style: 'margin:16px 0 6px' }, '점수 내역 · 날짜 기준'),
+      h('div', { class: 'small muted', style: 'margin-bottom:6px' }, '점수: 항목마다 1등 = 100, 비중 0인 항목은 숨김 · 날짜 기준: 배정일과 상관없이 이 기간에 실제로 잡힌 예약(예약성공일시)과 내원(방문예정일시 + 내원완료) — 점수에는 안 씀'),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'list' },
+        h('thead', {}, h('tr', {}, h('th', {}, '상담사'), ms.map((m) => h('th', { class: 'right' }, m.label, sub(`점수 · 비중 ${w[m.k]}`))), h('th', { class: 'right' }, '종합'), h('th', { class: 'right' }, '예약', sub('날짜 기준')), h('th', { class: 'right' }, '내원', sub('날짜 기준')))),
+        h('tbody', {}, rows.length ? rows.map((r) => h('tr', { class: r.active ? '' : 'muted' },
+          h('td', { class: 'nowrap' }, r.name), ms.map((m) => R(r.pending ? '—' : String(r.scores[m.k]))), R(r.pending ? '—' : h('b', {}, String(r.composite))),
+          R(fmt(r.byDate.reserved)), R(fmt(r.byDate.visited)))) : empty))));
   }
   add(main,
     h('div', { class: 'panel' }, h('h2', {}, '기준'),
@@ -1457,7 +1488,7 @@ async function perfView(main) {
         h('label', { class: 'field' }, h('span', {}, '비중 예시'), preset)),
       h('div', { class: 'field', style: 'margin-top:10px' }, h('span', {}, '항목별 비중 (0~10, 0이면 안 봄)'), wRow),
       h('div', { class: 'grid2' },
-        h('label', { class: 'field' }, h('span', {}, '판단 보류 기준 (받은 DB 가 몇 건 미만이면)'), minIn, h('span', { class: 'small muted' }, '신입·휴가 복귀자처럼 받은 DB 가 적은 사람은 순위를 매기지 않고, 실적순 분배에서는 균등분을 받습니다')),
+        h('label', { class: 'field' }, h('span', {}, '판단 보류 기준 (DB 수가 몇 건 미만이면)'), minIn, h('span', { class: 'small muted' }, '신입·휴가 복귀자처럼 DB 수(품질 불량 제외)가 적은 사람은 순위를 매기지 않고, 실적순 분배에서는 균등분을 받습니다')),
         h('label', { class: 'field' }, h('span', {}, '최소 보장 (균등분의 %)'), floor, h('span', { class: 'small muted' }, '실적순 분배에서 점수가 낮아도 균등분의 이 비율만큼은 받습니다. 100이면 균등, 0이면 순전히 점수 비례'))),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'primary', onclick: run(async () => {
         if (period === 'custom') return toast('저장할 수 있는 기간은 최근 7일·30일·이번 달입니다 (직접 지정은 보기만)');
@@ -1466,7 +1497,7 @@ async function perfView(main) {
         markDirty(); toast('저장했습니다 — 다음 실적순 분배부터 이 기준을 씁니다');
       }) }, '저장'), dirty)),
     h('div', { class: 'panel' }, h('h2', {}, '상담사별 실적'), tableBox),
-    h('div', { class: 'notice info small' }, '세는 법: 예약 = 예약성공일시가 있는 DB · 방문 = 방문성공·결제성공·결제실패·리워드 또는 방문 상태 "방문" · 결제 = 결제성공·리워드 또는 결제금액 입력. 기간 안에 배정받은 DB 를 지금 담당자 기준으로 셉니다(회수·재배정되면 새 담당자 실적). 건수만 보면 많이 받은 사람이 계속 유리해지므로 율(받은 DB 대비)도 함께 봅니다.'));
+    h('div', { class: 'notice info small' }, '세는 법: 기간 안에 배정받은 DB 를 지금 담당자 기준으로 셉니다(회수·재배정되면 새 담당자 실적). 품질 불량(결번·본인아님/미신청·중복·타사 중복)은 DB 수에서 빼고, 예약·내원에서도 뺍니다. 예약 = 예약성공일시가 있는 DB · 내원/취소/부도 = 내원 상태값. 결제금액은 참고용으로 점수에 쓰지 않습니다. 품질 불량은 상담사가 직접 고르는 값이라, 제외율이 팀 평균보다 10%p 넘게 높고 3건 이상이면 "확인 필요"로 표시합니다.'));
   draw();
 }
 
